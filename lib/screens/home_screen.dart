@@ -218,6 +218,14 @@ class SocietyDashboard extends StatefulWidget {
 }
 
 class _SocietyDashboardState extends State<SocietyDashboard> {
+  int _refreshKey = 0;
+
+  void _refresh() {
+    setState(() {
+      _refreshKey++;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<AppProvider>();
@@ -260,7 +268,7 @@ class _SocietyDashboardState extends State<SocietyDashboard> {
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
             ),
             const SizedBox(height: 12),
-            _BalanceCards(year: now.year, month: now.month),
+            _BalanceCards(key: ValueKey(_refreshKey), year: now.year, month: now.month),
             const SizedBox(height: 28),
 
             // Module Grid
@@ -281,25 +289,28 @@ class _SocietyDashboardState extends State<SocietyDashboard> {
                   icon: Icons.receipt_long_rounded,
                   label: 'Maintenance',
                   color: const Color(0xFF10B981),
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MaintenanceScreen())),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MaintenanceScreen())).then((_) => _refresh()),
                 ),
                 _ModuleTile(
                   icon: Icons.swap_horiz_rounded,
                   label: 'Transactions',
                   color: const Color(0xFFF59E0B),
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TransactionsScreen())),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TransactionsScreen())).then((_) => _refresh()),
                 ),
                 _ModuleTile(
                   icon: Icons.account_balance_rounded,
                   label: 'Bank Accounts',
                   color: const Color(0xFF8B5CF6),
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BankAccountsScreen())).then((_) => provider.init()),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BankAccountsScreen())).then((_) {
+                    provider.init();
+                    _refresh();
+                  }),
                 ),
                 _ModuleTile(
                   icon: Icons.bar_chart_rounded,
                   label: 'Reports',
                   color: const Color(0xFF06B6D4),
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ReportScreen())),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ReportScreen())).then((_) => _refresh()),
                 ),
               ],
             ),
@@ -309,7 +320,10 @@ class _SocietyDashboardState extends State<SocietyDashboard> {
               label: 'Residents & Occupancy',
               subtitle: 'Manage owner details and vacancy',
               color: const Color(0xFF1565C0),
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ResidentsScreen())).then((_) => provider.refreshFlats()),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ResidentsScreen())).then((_) {
+                provider.refreshFlats();
+                _refresh();
+              }),
             ),
             const SizedBox(height: 40),
           ],
@@ -372,7 +386,7 @@ class _StatTile extends StatelessWidget {
 
 class _BalanceCards extends StatefulWidget {
   final int year, month;
-  const _BalanceCards({required this.year, required this.month});
+  const _BalanceCards({super.key, required this.year, required this.month});
 
   @override
   State<_BalanceCards> createState() => _BalanceCardsState();

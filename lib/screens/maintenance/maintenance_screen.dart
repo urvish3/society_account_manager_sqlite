@@ -296,70 +296,75 @@ class _MonthCardState extends State<_MonthCard> {
     if (widget.isGrid) {
       return Container(
         decoration: BoxDecoration(
-          color: Colors.white,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFFF1F5F9)),
           boxShadow: [BoxShadow(color: Colors.black.withAlpha(5), blurRadius: 10, offset: const Offset(0, 4))],
         ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(20),
-          onTap: widget.onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(color: const Color(0xFF1565C0).withAlpha(26), borderRadius: BorderRadius.circular(10)),
-                      child: const Icon(Icons.calendar_month, color: Color(0xFF1565C0), size: 16),
-                    ),
-                    PopupMenuButton<String>(
-                      icon: const Icon(Icons.more_horiz, color: Color(0xFF64748B), size: 18),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      onSelected: (v) {
-                        if (v == 'delete') widget.onDelete();
-                      },
-                      itemBuilder: (ctx) => [
-                        const PopupMenuItem(
-                          value: 'delete',
-                          height: 32,
-                          child: Row(
-                            children: [
-                              Icon(Icons.delete_outline, color: Colors.red, size: 16),
-                              SizedBox(width: 4),
-                              Text('Delete', style: TextStyle(color: Colors.red, fontSize: 12)),
-                            ],
+        child: Material(
+          color: Colors.white,
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: const BorderSide(color: Color(0xFFF1F5F9)),
+          ),
+          child: InkWell(
+            onTap: widget.onTap,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(color: const Color(0xFF1565C0).withAlpha(26), borderRadius: BorderRadius.circular(10)),
+                        child: const Icon(Icons.calendar_month, color: Color(0xFF1565C0), size: 16),
+                      ),
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_horiz, color: Color(0xFF64748B), size: 18),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onSelected: (v) {
+                          if (v == 'delete') widget.onDelete();
+                        },
+                        itemBuilder: (ctx) => [
+                          const PopupMenuItem(
+                            value: 'delete',
+                            height: 32,
+                            child: Row(
+                              children: [
+                                Icon(Icons.delete_outline, color: Colors.red, size: 16),
+                                SizedBox(width: 4),
+                                Text('Delete', style: TextStyle(color: Colors.red, fontSize: 12)),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const Spacer(),
-                Text(
-                  widget.mm.label,
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '₹ ${_fmt.format(_collected)}',
-                  style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2E7D32), fontSize: 14),
-                ),
-                const SizedBox(height: 4),
-                Text('$_paid Paid · $_pending Pen.', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
-                const SizedBox(height: 12),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: LinearProgressIndicator(value: _total > 0 ? _paid / _total : 0, backgroundColor: const Color(0xFFF1F5F9), color: const Color(0xFF2E7D32), minHeight: 6),
-                ),
-              ],
+                        ],
+                      ),
+                    ],
+                  ),
+                  const Spacer(),
+                  Text(
+                    widget.mm.label,
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '₹ ${_fmt.format(_collected)}',
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2E7D32), fontSize: 14),
+                  ),
+                  const SizedBox(height: 4),
+                  Text('$_paid Paid · $_pending Pen.', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: LinearProgressIndicator(value: _total > 0 ? _paid / _total : 0, backgroundColor: const Color(0xFFF1F5F9), color: const Color(0xFF2E7D32), minHeight: 6),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -369,68 +374,73 @@ class _MonthCardState extends State<_MonthCard> {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFF1F5F9)),
         boxShadow: [BoxShadow(color: Colors.black.withAlpha(10), blurRadius: 10, offset: const Offset(0, 4))],
       ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: widget.onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(color: const Color(0xFF1565C0).withAlpha(26), borderRadius: BorderRadius.circular(14)),
-                    child: const Icon(Icons.calendar_month, color: Color(0xFF1565C0), size: 20),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    widget.mm.label,
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
-                  ),
-                  const Spacer(),
-                  PopupMenuButton<String>(
-                    icon: const Icon(Icons.more_horiz, color: Color(0xFF64748B)),
-                    onSelected: (v) {
-                      if (v == 'delete') widget.onDelete();
-                    },
-                    itemBuilder: (ctx) => [
-                      const PopupMenuItem(
-                        value: 'delete',
-                        child: Row(
-                          children: [
-                            Icon(Icons.delete_outline, color: Colors.red, size: 20),
-                            SizedBox(width: 8),
-                            Text('Delete', style: TextStyle(color: Colors.red)),
-                          ],
+      child: Material(
+        color: Colors.white,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: Color(0xFFF1F5F9)),
+        ),
+        child: InkWell(
+          onTap: widget.onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(color: const Color(0xFF1565C0).withAlpha(26), borderRadius: BorderRadius.circular(14)),
+                      child: const Icon(Icons.calendar_month, color: Color(0xFF1565C0), size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      widget.mm.label,
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                    ),
+                    const Spacer(),
+                    PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_horiz, color: Color(0xFF64748B)),
+                      onSelected: (v) {
+                        if (v == 'delete') widget.onDelete();
+                      },
+                      itemBuilder: (ctx) => [
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Row(
+                            children: [
+                              Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                              SizedBox(width: 8),
+                              Text('Delete', style: TextStyle(color: Colors.red)),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  _StatChip('₹ ${_fmt.format(_collected)}', 'Collected', const Color(0xFF2E7D32)),
-                  const SizedBox(width: 12),
-                  _StatChip('$_paid', 'Paid', const Color(0xFF1565C0)),
-                  const SizedBox(width: 12),
-                  _StatChip('$_pending', 'Pending', const Color(0xFFF59E0B)),
-                ],
-              ),
-              const SizedBox(height: 16),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: LinearProgressIndicator(value: _total > 0 ? _paid / _total : 0, backgroundColor: const Color(0xFFF1F5F9), color: const Color(0xFF2E7D32), minHeight: 8),
-              ),
-            ],
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    _StatChip('₹ ${_fmt.format(_collected)}', 'Collected', const Color(0xFF2E7D32)),
+                    const SizedBox(width: 12),
+                    _StatChip('$_paid', 'Paid', const Color(0xFF1565C0)),
+                    const SizedBox(width: 12),
+                    _StatChip('$_pending', 'Pending', const Color(0xFFF59E0B)),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: LinearProgressIndicator(value: _total > 0 ? _paid / _total : 0, backgroundColor: const Color(0xFFF1F5F9), color: const Color(0xFF2E7D32), minHeight: 8),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -881,46 +891,51 @@ class _FlatMaintenanceTile extends StatelessWidget {
     if (isGrid) {
       return Container(
         decoration: BoxDecoration(
-          color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFF1F5F9)),
           boxShadow: [BoxShadow(color: Colors.black.withAlpha(5), blurRadius: 6, offset: const Offset(0, 2))],
         ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: onEdit,
-          child: Padding(
-            padding: const EdgeInsets.all(10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(color: _statusColor.withAlpha(26), borderRadius: BorderRadius.circular(6)),
-                      child: Text(
-                        fm.status.name.toUpperCase(),
-                        style: TextStyle(color: _statusColor, fontSize: 8, fontWeight: FontWeight.bold),
+        child: Material(
+          color: Colors.white,
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: Color(0xFFF1F5F9)),
+          ),
+          child: InkWell(
+            onTap: onEdit,
+            child: Padding(
+              padding: const EdgeInsets.all(10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(color: _statusColor.withAlpha(26), borderRadius: BorderRadius.circular(6)),
+                        child: Text(
+                          fm.status.name.toUpperCase(),
+                          style: TextStyle(color: _statusColor, fontSize: 8, fontWeight: FontWeight.bold),
+                        ),
                       ),
-                    ),
-                    Icon(Icons.edit_outlined, size: 14, color: const Color(0xFF64748B).withAlpha(150)),
-                  ],
-                ),
-                const Spacer(),
-                Text(
-                  fm.wingName != null ? '${fm.wingName} - ${fm.flatNumber}' : 'Flat ${fm.flatNumber}',
-                  style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1E293B), fontSize: 12),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '₹ ${_fmt.format(fm.totalAmount)}',
-                  style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF64748B), fontSize: 11),
-                ),
-              ],
+                      Icon(Icons.edit_outlined, size: 14, color: const Color(0xFF64748B).withAlpha(150)),
+                    ],
+                  ),
+                  const Spacer(),
+                  Text(
+                    fm.wingName != null ? '${fm.wingName} - ${fm.flatNumber}' : 'Flat ${fm.flatNumber}',
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1E293B), fontSize: 12),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '₹ ${_fmt.format(fm.totalAmount)}',
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF64748B), fontSize: 11),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -930,50 +945,56 @@ class _FlatMaintenanceTile extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFF1F5F9)),
         boxShadow: [BoxShadow(color: Colors.black.withAlpha(5), blurRadius: 6, offset: const Offset(0, 2))],
       ),
-      child: ListTile(
-        dense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-        leading: Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(color: _statusColor.withAlpha(26), borderRadius: BorderRadius.circular(10)),
-          alignment: Alignment.center,
-          child: Text(
-            fm.flatNumber,
-            style: TextStyle(color: _statusColor, fontSize: 12, fontWeight: FontWeight.bold),
+      child: Material(
+        color: Colors.white,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Color(0xFFF1F5F9)),
+        ),
+        child: ListTile(
+          dense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+          leading: Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(color: _statusColor.withAlpha(26), borderRadius: BorderRadius.circular(10)),
+            alignment: Alignment.center,
+            child: Text(
+              fm.flatNumber,
+              style: TextStyle(color: _statusColor, fontSize: 12, fontWeight: FontWeight.bold),
+            ),
           ),
-        ),
-        title: Row(
-          children: [
-            Expanded(
-              child: Text(
-                fm.wingName != null ? '${fm.wingName} - ${fm.flatNumber}' : 'Flat ${fm.flatNumber}',
-                style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1E293B), fontSize: 14),
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  fm.wingName != null ? '${fm.wingName} - ${fm.flatNumber}' : 'Flat ${fm.flatNumber}',
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1E293B), fontSize: 14),
+                ),
               ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(color: _statusColor.withAlpha(26), borderRadius: BorderRadius.circular(6)),
-              child: Text(
-                fm.status.name.toUpperCase(),
-                style: TextStyle(color: _statusColor, fontSize: 9, fontWeight: FontWeight.bold),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(color: _statusColor.withAlpha(26), borderRadius: BorderRadius.circular(6)),
+                child: Text(
+                  fm.status.name.toUpperCase(),
+                  style: TextStyle(color: _statusColor, fontSize: 9, fontWeight: FontWeight.bold),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
+          subtitle: Text(
+            '₹ ${_fmt.format(fm.totalAmount)}${fm.formattedExtraDetails.isNotEmpty ? ' • ${fm.formattedExtraDetails}' : ''}',
+            style: const TextStyle(fontWeight: FontWeight.w500, color: Color(0xFF64748B), fontSize: 12),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: Icon(Icons.chevron_right, size: 18, color: const Color(0xFF64748B).withAlpha(100)),
+          onTap: onEdit,
         ),
-        subtitle: Text(
-          '₹ ${_fmt.format(fm.totalAmount)}${fm.formattedExtraDetails.isNotEmpty ? ' • ${fm.formattedExtraDetails}' : ''}',
-          style: const TextStyle(fontWeight: FontWeight.w500, color: Color(0xFF64748B), fontSize: 12),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        trailing: Icon(Icons.chevron_right, size: 18, color: const Color(0xFF64748B).withAlpha(100)),
-        onTap: onEdit,
       ),
     );
   }
