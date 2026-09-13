@@ -43,6 +43,116 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _showSettingsModal(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: const Color(0xFF1565C0).withAlpha(26), borderRadius: BorderRadius.circular(12)),
+                  child: const Icon(Icons.settings_outlined, color: Color(0xFF1565C0), size: 20),
+                ),
+                const SizedBox(width: 12),
+                const Text(
+                  'Settings & Database Backup',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Text('Manage complete database backups and restore.', style: TextStyle(color: Color(0xFF64748B), fontSize: 14)),
+            const SizedBox(height: 20),
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: Colors.blue.withAlpha(26), borderRadius: BorderRadius.circular(12)),
+                child: const Icon(Icons.backup_outlined, color: Color(0xFF1565C0)),
+              ),
+              title: const Text(
+                'Backup Database',
+                style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+              ),
+              subtitle: const Text('Export & share complete database backup file', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await DatabaseService().exportDatabase();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Database backup export initiated!')));
+                }
+              },
+            ),
+            const Divider(height: 24),
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: Colors.red.withAlpha(26), borderRadius: BorderRadius.circular(12)),
+                child: const Icon(Icons.restore_outlined, color: Color(0xFFEF4444)),
+              ),
+              title: const Text(
+                'Import Database',
+                style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFEF4444)),
+              ),
+              subtitle: const Text('Replace current database completely with a backup file', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    title: const Text('Replace Database?'),
+                    content: const Text(
+                      'Warning: Importing a database will completely replace your current database and all data with the selected backup file. This action cannot be undone.\n\nAre you sure you want to continue?',
+                    ),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFEF4444),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('Replace & Import'),
+                      ),
+                    ],
+                  ),
+                );
+
+                if (ok == true && mounted) {
+                  try {
+                    final success = await DatabaseService().importDatabase();
+                    if (success && mounted) {
+                      await _loadSocieties();
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Database imported and replaced successfully!')));
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to import database: $e')));
+                    }
+                  }
+                }
+              },
+            ),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -61,6 +171,16 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: Colors.transparent,
         foregroundColor: const Color(0xFF1E293B),
         actions: [
+          IconButton(
+            icon: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(color: const Color(0xFF64748B).withAlpha(26), borderRadius: BorderRadius.circular(14)),
+              child: const Icon(Icons.settings_outlined, size: 24, color: Color(0xFF64748B)),
+            ),
+            tooltip: 'Settings & Backup',
+            onPressed: () => _showSettingsModal(context),
+          ),
+          const SizedBox(width: 4),
           Padding(
             padding: const EdgeInsets.only(right: 12.0),
             child: IconButton(

@@ -1,6 +1,7 @@
 // lib/services/database_service.dart
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:sqflite/sqflite.dart' hide Transaction;
@@ -28,6 +29,28 @@ class DatabaseService {
       await Share.shareXFiles([XFile(path)], text: 'Backup of society database');
     } catch (e) {
       print('Share error: $e');
+    }
+  }
+
+  Future<bool> importDatabase() async {
+    try {
+      final files = await FilePicker.pickFiles(type: FileType.any);
+      if (files.isNotEmpty && files.first.path != null) {
+        final pickedFile = File(files.first.path!);
+        final path = join(await getDatabasesPath(), 'society.db');
+
+        if (_db != null) {
+          await _db!.close();
+          _db = null;
+        }
+
+        await pickedFile.copy(path);
+        return true;
+      }
+      return false;
+    } catch (e) {
+      print('Import error: $e');
+      rethrow;
     }
   }
 

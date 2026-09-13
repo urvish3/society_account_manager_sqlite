@@ -189,6 +189,65 @@ class _SocietySetupScreenState extends State<SocietySetupScreen> {
                 ),
               ],
             ],
+            // const SizedBox(height: 32),
+            // _buildSectionTitle('3. Database Backup & Restore', Icons.storage),
+            // Container(
+            //   padding: const EdgeInsets.all(20),
+            //   decoration: BoxDecoration(
+            //     color: Colors.white,
+            //     borderRadius: BorderRadius.circular(20),
+            //     boxShadow: [BoxShadow(color: Colors.black.withAlpha(10), blurRadius: 10, offset: const Offset(0, 4))],
+            //   ),
+            //   child: Column(
+            //     crossAxisAlignment: CrossAxisAlignment.start,
+            //     children: [
+            //       const Text(
+            //         'Backup your current database completely and save/share it, or import a backup file to replace your database completely.',
+            //         style: TextStyle(color: subTextColor, fontSize: 13, height: 1.4),
+            //       ),
+            //       const SizedBox(height: 16),
+            //       Row(
+            //         children: [
+            //           Expanded(
+            //             child: OutlinedButton.icon(
+            //               onPressed: () async {
+            //                 await DatabaseService().exportDatabase();
+            //                 if (context.mounted) {
+            //                   ScaffoldMessenger.of(context).showSnackBar(
+            //                     const SnackBar(content: Text('Database backup export initiated!')),
+            //                   );
+            //                 }
+            //               },
+            //               icon: const Icon(Icons.backup_outlined, size: 18),
+            //               label: const Text('Backup DB'),
+            //               style: OutlinedButton.styleFrom(
+            //                 foregroundColor: primaryBlue,
+            //                 side: const BorderSide(color: primaryBlue),
+            //                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            //                 padding: const EdgeInsets.symmetric(vertical: 12),
+            //               ),
+            //             ),
+            //           ),
+            //           const SizedBox(width: 12),
+            //           Expanded(
+            //             child: ElevatedButton.icon(
+            //               onPressed: () => _importDatabase(context, provider),
+            //               icon: const Icon(Icons.restore_outlined, size: 18),
+            //               label: const Text('Import DB'),
+            //               style: ElevatedButton.styleFrom(
+            //                 backgroundColor: const Color(0xFFEF4444),
+            //                 foregroundColor: Colors.white,
+            //                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            //                 elevation: 0,
+            //                 padding: const EdgeInsets.symmetric(vertical: 12),
+            //               ),
+            //             ),
+            //           ),
+            //         ],
+            //       ),
+            //     ],
+            //   ),
+            // ),
             const SizedBox(height: 48),
             if (society != null && provider.wings.isNotEmpty)
               Container(
@@ -292,6 +351,50 @@ class _SocietySetupScreenState extends State<SocietySetupScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _importDatabase(BuildContext context, AppProvider provider) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Replace Database?'),
+        content: const Text(
+          'Warning: Importing a database will completely replace your current database and all data with the selected backup file. This action cannot be undone.\n\nAre you sure you want to continue?',
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFEF4444),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Replace & Import'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok == true && context.mounted) {
+      try {
+        final success = await DatabaseService().importDatabase();
+        if (success && context.mounted) {
+          await provider.init();
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Database imported and replaced successfully!')));
+          if (widget.isFirst) {
+            Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const HomeScreen()), (route) => false);
+          } else {
+            Navigator.of(context).pop();
+          }
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to import database: $e')));
+        }
+      }
+    }
   }
 
   Future<void> _saveBasicInfo() async {
