@@ -2,6 +2,7 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:sqflite/sqflite.dart' hide Transaction;
@@ -27,8 +28,8 @@ class DatabaseService {
       if (!await dbFile.exists()) return;
 
       await Share.shareXFiles([XFile(path)], text: 'Backup of society database');
-    } catch (e) {
-      print('Share error: $e');
+    } catch (e, st) {
+      debugPrint('Share error: $e\n$st');
     }
   }
 
@@ -48,8 +49,8 @@ class DatabaseService {
         return true;
       }
       return false;
-    } catch (e) {
-      print('Import error: $e');
+    } catch (e, st) {
+      debugPrint('Import error: $e\n$st');
       rethrow;
     }
   }
@@ -61,17 +62,33 @@ class DatabaseService {
 
     return openDatabase(
       path,
-      version: 6,
+      version: 12,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
       onOpen: (db) async {
-        // Ensure all records have a societyId if at least one society exists
         final societies = await db.query('societies', limit: 1);
         if (societies.isNotEmpty) {
           final id = societies.first['id'];
           await db.update('bank_accounts', {'societyId': id}, where: 'societyId IS NULL');
           await db.update('transactions', {'societyId': id}, where: 'societyId IS NULL');
           await db.update('maintenance_months', {'societyId': id}, where: 'societyId IS NULL');
+        }
+        // Bind all current financials (transactions, bank accounts, maintenance months) to Wing G for 'Lotus Campus - Rivanta Garden City'
+        try {
+          final socs = await db.query('societies', where: 'name LIKE ?', whereArgs: ['%Lotus Campus - Rivanta Garden City%']);
+          if (socs.isNotEmpty) {
+            final socId = socs.first['id'];
+            final wings = await db.query('wings', where: 'societyId = ? AND (name LIKE ? OR name = ?)', whereArgs: [socId, '%Wing G%', 'G']);
+            if (wings.isNotEmpty) {
+              final wingGId = wings.first['id'];
+              await db.update('transactions', {'wingId': wingGId}, where: 'societyId = ? AND (wingId IS NULL OR wingId = 0)', whereArgs: [socId]);
+              await db.update('bank_accounts', {'wingId': wingGId}, where: 'societyId = ? AND (isCommon = 0 OR isCommon IS NULL)', whereArgs: [socId]);
+              await db.update('bank_accounts', {'wingId': null}, where: 'isCommon = 1');
+              await db.update('maintenance_months', {'wingId': wingGId}, where: 'societyId = ? AND (wingId IS NULL OR wingId = 0)', whereArgs: [socId]);
+            }
+          }
+        } catch (e, st) {
+          debugPrint('OnOpen binding error: $e\n$st');
         }
       },
     );
@@ -106,6 +123,86 @@ class DatabaseService {
       await db.execute('ALTER TABLE wings ADD COLUMN structureType TEXT DEFAULT "Residential Apartment"');
       await db.execute('ALTER TABLE flats ADD COLUMN unitType TEXT DEFAULT "Flat"');
     }
+    if (oldVersion < 7) {
+      await db.execute('ALTER TABLE societies ADD COLUMN autoReflectCommonExpenses INTEGER DEFAULT 1');
+      await db.execute('ALTER TABLE societies ADD COLUMN expenseDistributionMode TEXT DEFAULT "equal"');
+      await db.execute('ALTER TABLE wings ADD COLUMN allocationPercentage REAL DEFAULT 100.0');
+      await db.execute('ALTER TABLE bank_accounts ADD COLUMN isCommon INTEGER DEFAULT 0');
+      await db.execute('ALTER TABLE transactions ADD COLUMN wingId INTEGER');
+      await db.execute('ALTER TABLE transactions ADD COLUMN isCommonExpense INTEGER DEFAULT 0');
+      await db.execute('ALTER TABLE transactions ADD COLUMN distributionMode TEXT DEFAULT "equal"');
+    }
+    if (oldVersion < 8) {
+      await db.execute('ALTER TABLE bank_accounts ADD COLUMN wingId INTEGER');
+    }
+    if (oldVersion < 10) {
+      await db.execute('ALTER TABLE bank_accounts ADD COLUMN isCash INTEGER DEFAULT 0');
+      try {
+        final socs = await db.query('societies', where: 'name LIKE ?', whereArgs: ['%Lotus Campus - Rivanta Garden City%']);
+        if (socs.isNotEmpty) {
+          final socId = socs.first['id'];
+          final wings = await db.query('wings', where: 'societyId = ? AND (name LIKE ? OR name = ?)', whereArgs: [socId, '%Wing G%', 'G']);
+          if (wings.isNotEmpty) {
+            final wingGId = wings.first['id'];
+            await db.update('bank_accounts', {'wingId': wingGId}, where: 'societyId = ?', whereArgs: [socId]);
+          }
+        }
+      } catch (e, st) {
+        debugPrint('Upgrade migration error: $e\n$st');
+      }
+    }
+    if (oldVersion < 11) {
+      try {
+        await db.transaction((txn) async {
+          await txn.execute('''
+            CREATE TABLE maintenance_months_new (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              societyId INTEGER,
+              wingId INTEGER,
+              year INTEGER NOT NULL,
+              month INTEGER NOT NULL,
+              defaultAmount REAL NOT NULL,
+              notes TEXT,
+              UNIQUE(societyId, wingId, year, month),
+              FOREIGN KEY (societyId) REFERENCES societies(id),
+              FOREIGN KEY (wingId) REFERENCES wings(id)
+            )
+          ''');
+          await txn.execute('''
+            INSERT OR IGNORE INTO maintenance_months_new (id, societyId, wingId, year, month, defaultAmount, notes)
+            SELECT id, societyId, wingId, year, month, defaultAmount, notes FROM maintenance_months
+          ''');
+          await txn.execute('DROP TABLE maintenance_months');
+          await txn.execute('ALTER TABLE maintenance_months_new RENAME TO maintenance_months');
+        });
+      } catch (e, st) {
+        debugPrint('Migration 11 maintenance_months error: $e\n$st');
+      }
+    }
+    if (oldVersion < 12) {
+      await db.execute('ALTER TABLE wings ADD COLUMN defaultMaintenance REAL DEFAULT 1000.0');
+      await db.execute('ALTER TABLE wings ADD COLUMN openingCashBalance REAL DEFAULT 0.0');
+      try {
+        final socs = await db.query('societies', limit: 1);
+        if (socs.isNotEmpty) {
+          final socId = socs.first['id'];
+          final openingCash = (socs.first['openingCashBalance'] as num?)?.toDouble() ?? 0;
+          final defMaint = (socs.first['defaultMaintenance'] as num?)?.toDouble() ?? 1000;
+
+          final wings = await db.query('wings', where: 'societyId = ? AND (name LIKE ? OR name = ?)', whereArgs: [socId, '%Wing G%', 'G']);
+          if (wings.isNotEmpty) {
+            final wingGId = wings.first['id'];
+            await db.update('wings', {'openingCashBalance': openingCash, 'defaultMaintenance': defMaint}, where: 'id = ?', whereArgs: [wingGId]);
+            await db.update('wings', {'openingCashBalance': 0.0}, where: 'societyId = ? AND id != ?', whereArgs: [socId, wingGId]);
+          } else {
+            await db.update('wings', {'defaultMaintenance': defMaint});
+          }
+          await db.update('societies', {'openingCashBalance': 0.0, 'defaultMaintenance': 0.0}, where: 'id = ?', whereArgs: [socId]);
+        }
+      } catch (e, st) {
+        debugPrint('Migration 12 wing-wise opening cash error: $e\n$st');
+      }
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -115,7 +212,9 @@ class DatabaseService {
         name TEXT NOT NULL,
         address TEXT,
         defaultMaintenance REAL DEFAULT 1000,
-        openingCashBalance REAL DEFAULT 0
+        openingCashBalance REAL DEFAULT 0,
+        autoReflectCommonExpenses INTEGER DEFAULT 1,
+        expenseDistributionMode TEXT DEFAULT 'equal'
       )
     ''');
 
@@ -127,6 +226,9 @@ class DatabaseService {
         floors INTEGER NOT NULL,
         defaultHousesPerFloor INTEGER DEFAULT 4,
         structureType TEXT DEFAULT 'Residential Apartment',
+        allocationPercentage REAL DEFAULT 100.0,
+        defaultMaintenance REAL DEFAULT 1000.0,
+        openingCashBalance REAL DEFAULT 0.0,
         FOREIGN KEY (societyId) REFERENCES societies(id)
       )
     ''');
@@ -149,11 +251,14 @@ class DatabaseService {
       CREATE TABLE maintenance_months (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         societyId INTEGER,
+        wingId INTEGER,
         year INTEGER NOT NULL,
         month INTEGER NOT NULL,
         defaultAmount REAL NOT NULL,
         notes TEXT,
-        UNIQUE(societyId, year, month)
+        UNIQUE(societyId, wingId, year, month),
+        FOREIGN KEY (societyId) REFERENCES societies(id),
+        FOREIGN KEY (wingId) REFERENCES wings(id)
       )
     ''');
 
@@ -196,6 +301,9 @@ class DatabaseService {
         bankAccountId INTEGER,
         toBankAccountId INTEGER,
         relatedFlatNumber TEXT,
+        wingId INTEGER,
+        isCommonExpense INTEGER DEFAULT 0,
+        distributionMode TEXT DEFAULT 'equal',
         year INTEGER NOT NULL,
         month INTEGER NOT NULL
       )
@@ -205,12 +313,17 @@ class DatabaseService {
       CREATE TABLE bank_accounts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         societyId INTEGER,
+        wingId INTEGER,
         bankName TEXT NOT NULL,
         accountNumber TEXT NOT NULL,
         accountHolder TEXT NOT NULL,
         openingBalance REAL DEFAULT 0,
         openingDate TEXT NOT NULL,
-        isActive INTEGER DEFAULT 1
+        isActive INTEGER DEFAULT 1,
+        isCommon INTEGER DEFAULT 0,
+        isCash INTEGER DEFAULT 0,
+        FOREIGN KEY (societyId) REFERENCES societies(id),
+        FOREIGN KEY (wingId) REFERENCES wings(id)
       )
     ''');
 
@@ -236,6 +349,18 @@ class DatabaseService {
   Future<int> insertSociety(Society s) async {
     final d = await db;
     s.id = await d.insert('societies', s.toMap());
+    await d.insert('bank_accounts', {
+      'societyId': s.id,
+      'wingId': null,
+      'bankName': 'Cash',
+      'accountNumber': 'CASH-SOC-${s.id}',
+      'accountHolder': s.name,
+      'openingBalance': s.openingCashBalance,
+      'openingDate': DateTime.now().toIso8601String(),
+      'isActive': 1,
+      'isCommon': 1,
+      'isCash': 1,
+    });
     return s.id!;
   }
 
@@ -262,6 +387,18 @@ class DatabaseService {
   Future<int> insertWing(Wing w) async {
     final d = await db;
     w.id = await d.insert('wings', w.toMap());
+    await d.insert('bank_accounts', {
+      'societyId': w.societyId,
+      'wingId': w.id,
+      'bankName': 'Cash',
+      'accountNumber': 'CASH-WING-${w.id}',
+      'accountHolder': w.name,
+      'openingBalance': w.openingCashBalance,
+      'openingDate': DateTime.now().toIso8601String(),
+      'isActive': 1,
+      'isCommon': 0,
+      'isCash': 1,
+    });
     return w.id!;
   }
 
@@ -274,6 +411,12 @@ class DatabaseService {
   Future<void> updateWing(Wing w) async {
     final d = await db;
     await d.update('wings', w.toMap(), where: 'id = ?', whereArgs: [w.id]);
+    await d.update(
+      'bank_accounts',
+      {'openingBalance': w.openingCashBalance, 'accountHolder': w.name},
+      where: 'wingId = ? AND isCash = 1',
+      whereArgs: [w.id],
+    );
   }
 
   Future<void> deleteWing(int wingId) async {
@@ -343,9 +486,13 @@ class DatabaseService {
     return mm.id!;
   }
 
-  Future<MaintenanceMonth?> getMaintenanceMonth(int year, int month, {int? societyId}) async {
+  Future<MaintenanceMonth?> getMaintenanceMonth(int year, int month, {int? societyId, int? wingId}) async {
     final d = await db;
-    final rows = await d.query('maintenance_months', where: 'year = ? AND month = ?${societyId != null ? " AND societyId = ?" : ""}', whereArgs: [year, month, if (societyId != null) societyId]);
+    final rows = await d.query(
+      'maintenance_months',
+      where: 'year = ? AND month = ?${societyId != null ? " AND societyId = ?" : ""}${wingId != null ? " AND wingId = ?" : " AND wingId IS NULL"}',
+      whereArgs: [year, month, if (societyId != null) societyId, if (wingId != null) wingId],
+    );
     if (rows.isEmpty) return null;
     return MaintenanceMonth.fromMap(rows.first);
   }
@@ -519,32 +666,32 @@ class DatabaseService {
   }
 
   Future<MonthlySummary> computeMonthlySummary(int year, int month, {int? societyId}) async {
-    final societies = await getSocieties();
-    final society = societies.firstWhere(
-      (s) => s.id == societyId,
-      orElse: () => societies.isNotEmpty ? societies.first : Society(name: '', address: '', defaultMaintenance: 0),
-    );
-    double openingCash = society.openingCashBalance;
+    // Bank & Cash Opening Balance (wingId IS NULL)
+    final accounts = await getBankAccounts(societyId: societyId);
+    double openingCash = accounts.where((b) => b.wingId == null && b.isCash).fold(0, (sum, acc) => sum + acc.openingBalance);
+    double openingBank = accounts.where((b) => b.wingId == null && !b.isCash).fold(0, (sum, acc) => sum + acc.openingBalance);
 
-    // Maintenance collected (paid flat maintenances)
-    final mm = await getMaintenanceMonth(year, month, societyId: societyId);
+    // Maintenance collected (paid flat maintenances) for society level (wingId IS NULL)
+    final allMms = await getAllMaintenanceMonths(societyId: societyId);
     double cashMaintenanceCollected = 0;
     double bankMaintenanceCollected = 0;
-    if (mm != null) {
-      final fms = await getFlatMaintenances(mm.id!);
-      for (final fm in fms) {
-        if (fm.status == PaymentStatus.paid) {
-          if (fm.bankAccountId != null) {
-            bankMaintenanceCollected += fm.totalAmount;
-          } else {
-            cashMaintenanceCollected += fm.totalAmount;
+    for (final mm in allMms) {
+      if (mm.year == year && mm.month == month && mm.wingId == null) {
+        final fms = await getFlatMaintenances(mm.id!);
+        for (final fm in fms) {
+          if (fm.status == PaymentStatus.paid) {
+            if (fm.bankAccountId != null) {
+              bankMaintenanceCollected += fm.totalAmount;
+            } else {
+              cashMaintenanceCollected += fm.totalAmount;
+            }
           }
         }
       }
     }
 
-    // Transactions
-    final txns = await getTransactions(year, month, societyId: societyId);
+    // Transactions (wingId IS NULL)
+    final txns = (await getTransactions(year, month, societyId: societyId)).where((t) => t.wingId == null).toList();
     double cashIncome = 0;
     double bankIncome = 0;
     double cashExpense = 0;
@@ -572,12 +719,10 @@ class DatabaseService {
       }
     }
 
-    // Bank Opening Balance
-    final accounts = await getBankAccounts(societyId: societyId);
-    double openingBank = accounts.fold(0, (sum, acc) => sum + acc.openingBalance);
+    // openingBank already computed from accounts where wingId == null
 
-    // Compute balances from previous months
-    final allPrevTxns = await getAllTransactions(societyId: societyId);
+    // Compute balances from previous months (wingId IS NULL)
+    final allPrevTxns = (await getAllTransactions(societyId: societyId)).where((t) => t.wingId == null);
     final prevMonthsTxns = allPrevTxns.where((t) => t.year < year || (t.year == year && t.month < month));
 
     double cashIn = 0;
@@ -607,10 +752,9 @@ class DatabaseService {
       }
     }
 
-    // Previous maintenance collections
-    final allMms = await getAllMaintenanceMonths(societyId: societyId);
+    // Previous maintenance collections (wingId IS NULL)
     for (final m in allMms) {
-      if (m.year < year || (m.year == year && m.month < month)) {
+      if ((m.year < year || (m.year == year && m.month < month)) && m.wingId == null) {
         final fms = await getFlatMaintenances(m.id!);
         for (final fm in fms) {
           if (fm.status == PaymentStatus.paid) {
@@ -641,5 +785,26 @@ class DatabaseService {
       openingCashBalance: double.parse(openingCash.toStringAsFixed(2)),
       openingBankBalance: double.parse(openingBank.toStringAsFixed(2)),
     );
+  }
+
+  Future<Map<String, double>> computeAllTransactionsSummary({int? societyId, int? wingId}) async {
+    final txns = await getAllTransactions(societyId: societyId);
+    double totalIncome = 0;
+    double totalExpense = 0;
+
+    for (final t in txns) {
+      if (wingId != null && t.wingId != wingId && t.wingId != null) continue;
+      if (t.type == TransactionType.income) {
+        totalIncome += t.amount;
+      } else if (t.type == TransactionType.expense) {
+        totalExpense += t.amount;
+      }
+    }
+
+    return {
+      'totalIncome': double.parse(totalIncome.toStringAsFixed(2)),
+      'totalExpense': double.parse(totalExpense.toStringAsFixed(2)),
+      'netAmount': double.parse((totalIncome - totalExpense).toStringAsFixed(2)),
+    };
   }
 }

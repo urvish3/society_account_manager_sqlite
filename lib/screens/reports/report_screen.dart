@@ -13,6 +13,7 @@ import '../../models/models.dart';
 import '../../providers/app_provider.dart';
 import '../../services/database_service.dart';
 import '../../services/report_service.dart';
+import 'common_account_report_screen.dart';
 
 final _fmt = NumberFormat('#,##0.00', 'en_IN');
 const _months = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -162,6 +163,18 @@ class _ReportScreenState extends State<ReportScreen> {
                           color: const Color(0xFF10B981),
                           generating: _generatingIndex == 2,
                           onTap: () => _generateExcel(),
+                        ),
+                        const SizedBox(height: 12),
+                        _ReportButton(
+                          icon: Icons.account_balance_wallet_outlined,
+                          label: 'Common Account & Allocation Report',
+                          subtitle: 'View wing transfers, shares & surplus',
+                          color: const Color(0xFF7C3AED),
+                          generating: false,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const CommonAccountReportScreen()),
+                          ),
                         ),
                         const SizedBox(height: 40),
                       ],

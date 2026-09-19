@@ -1,6 +1,4 @@
 // lib/screens/maintenance/maintenance_screen.dart
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -12,14 +10,90 @@ import '../../services/database_service.dart';
 final _fmt = NumberFormat('#,##0.00', 'en_IN');
 const _monthNames = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-class MaintenanceScreen extends StatefulWidget {
+class MaintenanceScreen extends StatelessWidget {
   const MaintenanceScreen({super.key});
 
   @override
-  State<MaintenanceScreen> createState() => _MaintenanceScreenState();
+  Widget build(BuildContext context) {
+    final provider = context.watch<AppProvider>();
+    final wings = provider.wings;
+    const primaryBlue = Color(0xFF1565C0);
+    const textColor = Color(0xFF1E293B);
+    const subTextColor = Color(0xFF64748B);
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
+      appBar: AppBar(
+        title: const Text(
+          'Maintenance (Wings)',
+          style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
+        ),
+        centerTitle: true,
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        foregroundColor: textColor,
+      ),
+      body: wings.isEmpty
+          ? const Center(
+              child: Text('Please add wings and flats first in Society Setup.', style: TextStyle(color: subTextColor)),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(20),
+              itemCount: wings.length,
+              itemBuilder: (_, i) {
+                final wing = wings[i];
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [BoxShadow(color: Colors.black.withAlpha(10), blurRadius: 10, offset: const Offset(0, 4))],
+                  ),
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                    leading: Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(color: primaryBlue.withAlpha(26), borderRadius: BorderRadius.circular(14)),
+                      alignment: Alignment.center,
+                      child: Text(
+                        wing.name[0].toUpperCase(),
+                        style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.bold, fontSize: 20),
+                      ),
+                    ),
+                    title: Text(
+                      'Wing / Block: ${wing.name}',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: textColor),
+                    ),
+                    subtitle: Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        '${wing.floors} floors • ${wing.defaultHousesPerFloor} units/floor • Share: ${wing.allocationPercentage}%',
+                        style: const TextStyle(color: subTextColor, fontSize: 13),
+                      ),
+                    ),
+                    trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: subTextColor),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => _WingMaintenanceMonthsScreen(wing: wing)),
+                    ),
+                  ),
+                );
+              },
+            ),
+    );
+  }
 }
 
-class _MaintenanceScreenState extends State<MaintenanceScreen> {
+class _WingMaintenanceMonthsScreen extends StatefulWidget {
+  final Wing wing;
+  const _WingMaintenanceMonthsScreen({required this.wing});
+
+  @override
+  State<_WingMaintenanceMonthsScreen> createState() => _WingMaintenanceMonthsScreenState();
+}
+
+class _WingMaintenanceMonthsScreenState extends State<_WingMaintenanceMonthsScreen> {
   final _db = DatabaseService();
   List<MaintenanceMonth> _months = [];
   bool _isGridView = false;
@@ -31,23 +105,29 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
   }
 
   Future<void> _load() async {
-    final provider = context.read<AppProvider>();
-    final m = await _db.getAllMaintenanceMonths(societyId: provider.society?.id);
-    setState(() => _months = m);
+    final allMms = await _db.getAllMaintenanceMonths(societyId: widget.wing.societyId);
+    final wingMms = allMms.where((mm) => mm.wingId == widget.wing.id || mm.wingId == null || mm.wingId == 0).toList();
+    setState(() => _months = wingMms);
   }
 
   @override
   Widget build(BuildContext context) {
+    const primaryBlue = Color(0xFF1565C0);
+    const textColor = Color(0xFF1E293B);
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: const Text('Maintenance', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(
+          'Maintenance — ${widget.wing.name}',
+          style: const TextStyle(fontWeight: FontWeight.bold, color: textColor),
+        ),
         centerTitle: true,
         elevation: 0,
         backgroundColor: Colors.transparent,
-        foregroundColor: const Color(0xFF1E293B),
+        foregroundColor: textColor,
         actions: [
-          IconButton(icon: Icon(_isGridView ? Icons.view_list : Icons.grid_view), onPressed: () => setState(() => _isGridView = !_isGridView), tooltip: _isGridView ? 'List View' : 'Grid View'),
+          IconButton(icon: Icon(_isGridView ? Icons.view_list : Icons.grid_view), onPressed: () => setState(() => _isGridView = !_isGridView)),
           const SizedBox(width: 8),
         ],
       ),
@@ -58,12 +138,12 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                 children: [
                   Container(
                     padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(color: const Color(0xFF1565C0).withAlpha(26), shape: BoxShape.circle),
-                    child: const Icon(Icons.receipt_long, size: 60, color: Color(0xFF1565C0)),
+                    decoration: BoxDecoration(color: primaryBlue.withAlpha(26), shape: BoxShape.circle),
+                    child: const Icon(Icons.receipt_long, size: 60, color: primaryBlue),
                   ),
                   const SizedBox(height: 24),
                   const Text(
-                    'No maintenance months added',
+                    'No maintenance months added for this wing',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Color(0xFF64748B)),
                   ),
                   const SizedBox(height: 24),
@@ -71,10 +151,12 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                     icon: const Icon(Icons.add),
                     label: const Text('Add Month'),
                     style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryBlue,
+                      foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     ),
-                    onPressed: _addMonth,
+                    onPressed: () => _addMonthForWing(context, widget.wing),
                   ),
                 ],
               ),
@@ -106,8 +188,10 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
       floatingActionButton: FloatingActionButton.extended(
         icon: const Icon(Icons.add),
         label: const Text('Add Month'),
+        backgroundColor: primaryBlue,
+        foregroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        onPressed: _addMonth,
+        onPressed: () => _addMonthForWing(context, widget.wing),
       ),
     );
   }
@@ -135,17 +219,11 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
     }
   }
 
-  Future<void> _addMonth() async {
+  Future<void> _addMonthForWing(BuildContext context, Wing wing) async {
     final provider = context.read<AppProvider>();
-    if (provider.allFlats.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please add wings and flats first')));
-      return;
-    }
-
     int selectedYear = DateTime.now().year;
     int selectedMonth = DateTime.now().month;
     final amtCtrl = TextEditingController(text: provider.society?.defaultMaintenance.toString() ?? '1000');
-
     bool isCreating = false;
 
     await showDialog(
@@ -153,7 +231,7 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSt) => AlertDialog(
-          title: const Text('Add Maintenance Month'),
+          title: Text('Add Maintenance — ${wing.name}'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -187,25 +265,28 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                   : () async {
                       setSt(() => isCreating = true);
                       try {
-                        final existing = await _db.getMaintenanceMonth(selectedYear, selectedMonth, societyId: provider.society?.id);
+                        final existing = await _db.getMaintenanceMonth(selectedYear, selectedMonth, societyId: provider.society?.id, wingId: wing.id);
                         if (existing != null) {
                           if (ctx.mounted) {
                             setSt(() => isCreating = false);
                             if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('This month already exists')));
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('This month already exists for this wing')));
                             }
                           }
                           return;
                         }
 
-                        final mm = MaintenanceMonth(societyId: provider.society?.id, year: selectedYear, month: selectedMonth, defaultAmount: double.tryParse(amtCtrl.text) ?? 1000);
+                        final mm = MaintenanceMonth(
+                          societyId: provider.society?.id,
+                          wingId: wing.id,
+                          year: selectedYear,
+                          month: selectedMonth,
+                          defaultAmount: double.tryParse(amtCtrl.text) ?? 1000,
+                        );
                         await _db.insertMaintenanceMonth(mm);
 
-                        // Generate flat maintenances for all current flats from DB to ensure freshest occupancy status
-                        final flats = await _db.getFlatsBySociety(provider.society!.id!);
-                        final Map<int, Flat> uniqueFlats = {for (var f in flats) f.id!: f};
-
-                        final fms = uniqueFlats.values
+                        final flats = await _db.getFlats(wing.id!);
+                        final fms = flats
                             .map(
                               (f) => FlatMaintenance(
                                 maintenanceMonthId: mm.id!,
@@ -213,7 +294,7 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                                 flatNumber: f.flatNumber,
                                 baseAmount: mm.defaultAmount,
                                 status: f.isVacant ? PaymentStatus.exempt : PaymentStatus.pending,
-                                wingName: provider.wings.firstWhere((w) => w.id == f.wingId, orElse: () => Wing(societyId: 0, name: '', floors: 0, defaultHousesPerFloor: 0)).name,
+                                wingName: wing.name,
                               ),
                             )
                             .toList();
@@ -221,7 +302,8 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
 
                         if (ctx.mounted) Navigator.pop(ctx);
                         _load();
-                      } catch (e) {
+                      } catch (e, st) {
+                        debugPrint('Maintenance creation error: $e\n$st');
                         if (ctx.mounted) {
                           setSt(() => isCreating = false);
                           if (context.mounted) {
@@ -557,7 +639,6 @@ class _MaintenanceDetailScreenState extends State<_MaintenanceDetailScreen> {
       if (a.wingName != b.wingName && a.wingName != null && b.wingName != null) {
         return a.wingName!.compareTo(b.wingName!);
       }
-      // Try to compare numerically if possible
       final aNum = int.tryParse(a.flatNumber.replaceAll(RegExp(r'\D'), ''));
       final bNum = int.tryParse(b.flatNumber.replaceAll(RegExp(r'\D'), ''));
       if (aNum != null && bNum != null && aNum != bNum) {
@@ -650,171 +731,34 @@ class _MaintenanceDetailScreenState extends State<_MaintenanceDetailScreen> {
             ),
           ),
           Expanded(
-            child: _isGridView
+            child: _filtered.isEmpty
+                ? const Center(
+                    child: Text('No maintenance records found', style: TextStyle(color: Color(0xFF64748B))),
+                  )
+                : _isGridView
                 ? GridView.builder(
-                    padding: const EdgeInsets.all(12),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 10, mainAxisSpacing: 10, childAspectRatio: 2),
+                    padding: const EdgeInsets.all(20),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, childAspectRatio: 0.72, crossAxisSpacing: 16, mainAxisSpacing: 16),
                     itemCount: _filtered.length,
-                    itemBuilder: (_, i) => _FlatMaintenanceTile(fm: _filtered[i], onEdit: () => _editFlatMaintenance(_filtered[i]), isGrid: true),
+                    itemBuilder: (_, i) => _FlatCard(
+                      key: ValueKey(_filtered[i].id),
+                      fm: _filtered[i],
+                      isGrid: true,
+                      onUpdate: _load,
+                    ),
                   )
                 : ListView.builder(
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                     itemCount: _filtered.length,
-                    itemBuilder: (_, i) => _FlatMaintenanceTile(fm: _filtered[i], onEdit: () => _editFlatMaintenance(_filtered[i])),
+                    itemBuilder: (_, i) => _FlatCard(
+                      key: ValueKey(_filtered[i].id),
+                      fm: _filtered[i],
+                      isGrid: false,
+                      onUpdate: _load,
+                    ),
                   ),
           ),
         ],
-      ),
-    );
-  }
-
-  Future<void> _editFlatMaintenance(FlatMaintenance fm) async {
-    final provider = context.read<AppProvider>();
-    final baseCtrl = TextEditingController(text: fm.baseAmount.toString());
-    final remarksCtrl = TextEditingController(text: fm.remarks ?? '');
-    PaymentStatus status = fm.status;
-    DateTime? paidDate = fm.paidDate;
-    BankAccount? selectedBank;
-
-    if (fm.bankAccountId != null) {
-      try {
-        selectedBank = provider.bankAccounts.firstWhere((b) => b.id == fm.bankAccountId);
-      } catch (_) {}
-    }
-
-    // Use the new extraDetails getter from the model
-    List<ExtraAmount> extras = List.from(fm.extraDetails);
-
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSt) => Padding(
-          padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(fm.wingName != null ? '${fm.wingName} - ${fm.flatNumber}' : 'Flat ${fm.flatNumber}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx)),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: baseCtrl,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Base Amount', prefixText: '₹ ', border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 20),
-                const Text('Extra Charges', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                const Divider(),
-                ...extras.asMap().entries.map((entry) {
-                  int idx = entry.key;
-                  ExtraAmount e = entry.value;
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 8.0),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          flex: 2,
-                          child: TextFormField(
-                            initialValue: e.amount == 0 ? '' : e.amount.toString(),
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(hintText: 'Amount', prefixText: '₹ ', isDense: true),
-                            onChanged: (v) => setSt(() => e.amount = double.tryParse(v) ?? 0),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          flex: 3,
-                          child: TextFormField(
-                            initialValue: e.note,
-                            decoration: const InputDecoration(hintText: 'Note (e.g. Lift, Penalty)', isDense: true),
-                            onChanged: (v) => setSt(() => e.note = v),
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
-                          onPressed: () => setSt(() => extras.removeAt(idx)),
-                        ),
-                      ],
-                    ),
-                  );
-                }),
-                TextButton.icon(
-                  onPressed: () => setSt(() => extras.add(ExtraAmount(amount: 0, note: ''))),
-                  icon: const Icon(Icons.add_circle_outline),
-                  label: const Text('Add Extra Charge'),
-                ),
-                const SizedBox(height: 20),
-                DropdownButtonFormField<PaymentStatus>(
-                  initialValue: status,
-                  decoration: const InputDecoration(labelText: 'Status', border: OutlineInputBorder()),
-                  items: PaymentStatus.values.map((s) => DropdownMenuItem(value: s, child: Text(s.name.toUpperCase()))).toList(),
-                  onChanged: (v) => setSt(() => status = v!),
-                ),
-                const SizedBox(height: 12),
-                if (status == PaymentStatus.paid) ...[
-                  DropdownButtonFormField<BankAccount?>(
-                    initialValue: selectedBank,
-                    decoration: const InputDecoration(labelText: 'Payment Mode', border: OutlineInputBorder(), hintText: 'Cash'),
-                    items: [
-                      const DropdownMenuItem<BankAccount?>(value: null, child: Text('Cash')),
-                      ...provider.bankAccounts.map((b) => DropdownMenuItem(value: b, child: Text(b.bankName))),
-                    ],
-                    onChanged: (v) => setSt(() => selectedBank = v),
-                  ),
-                  const SizedBox(height: 12),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Payment Date'),
-                    subtitle: Text(paidDate != null ? DateFormat('dd/MM/yyyy').format(paidDate!) : 'Tap to select'),
-                    leading: const Icon(Icons.calendar_today),
-                    onTap: () async {
-                      final d = await showDatePicker(context: ctx, initialDate: paidDate ?? DateTime.now(), firstDate: DateTime(2020), lastDate: DateTime.now());
-                      if (d != null) setSt(() => paidDate = d);
-                    },
-                  ),
-                ],
-                TextField(
-                  controller: remarksCtrl,
-                  decoration: const InputDecoration(labelText: 'General Remarks', border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      // Filter out empty extras
-                      final validExtras = extras.where((e) => e.amount > 0).toList();
-                      final totalExtra = validExtras.fold(0.0, (sum, e) => sum + e.amount);
-                      final extraNoteJson = validExtras.isEmpty ? null : jsonEncode(validExtras.map((e) => e.toMap()).toList());
-
-                      final updated = fm.copyWith(
-                        baseAmount: double.tryParse(baseCtrl.text) ?? fm.baseAmount,
-                        extraAmount: totalExtra,
-                        extraNote: extraNoteJson,
-                        status: status,
-                        paidDate: status == PaymentStatus.paid ? paidDate : null,
-                        remarks: remarksCtrl.text.trim().isEmpty ? null : remarksCtrl.text.trim(),
-                        bankAccountId: status == PaymentStatus.paid ? selectedBank?.id : null,
-                      );
-                      await _db.updateFlatMaintenance(updated);
-                      if (ctx.mounted) Navigator.pop(ctx);
-                      _load();
-                    },
-                    child: const Text('Save Changes', style: TextStyle(fontSize: 16)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -833,30 +777,30 @@ class _FilterTab extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? activeColor : Colors.transparent,
-          borderRadius: BorderRadius.circular(14),
+          color: isSelected ? activeColor : Colors.white,
+          borderRadius: BorderRadius.circular(10),
           border: Border.all(color: isSelected ? activeColor : const Color(0xFFE2E8F0)),
-          boxShadow: isSelected ? [BoxShadow(color: activeColor.withAlpha(50), blurRadius: 8, offset: const Offset(0, 2))] : null,
         ),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
             Text(
               label,
-              style: TextStyle(color: isSelected ? Colors.white : const Color(0xFF64748B), fontWeight: isSelected ? FontWeight.bold : FontWeight.w500),
+              style: TextStyle(color: isSelected ? Colors.white : const Color(0xFF1E293B), fontWeight: FontWeight.bold, fontSize: 13),
             ),
             const SizedBox(width: 6),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(color: isSelected ? Colors.white.withAlpha(50) : const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(6)),
+              decoration: BoxDecoration(
+                color: isSelected ? Colors.white.withAlpha(50) : const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(6),
+              ),
               child: Text(
                 '$count',
-                style: TextStyle(fontSize: 10, color: isSelected ? Colors.white : const Color(0xFF64748B), fontWeight: FontWeight.bold),
+                style: TextStyle(color: isSelected ? Colors.white : const Color(0xFF64748B), fontWeight: FontWeight.bold, fontSize: 11),
               ),
             ),
           ],
@@ -866,134 +810,166 @@ class _FilterTab extends StatelessWidget {
   }
 }
 
-class _FlatMaintenanceTile extends StatelessWidget {
+class _FlatCard extends StatefulWidget {
   final FlatMaintenance fm;
-  final VoidCallback onEdit;
   final bool isGrid;
+  final VoidCallback onUpdate;
 
-  const _FlatMaintenanceTile({required this.fm, required this.onEdit, this.isGrid = false});
+  const _FlatCard({super.key, required this.fm, required this.isGrid, required this.onUpdate});
 
-  Color get _statusColor {
-    switch (fm.status) {
-      case PaymentStatus.paid:
-        return Colors.green;
-      case PaymentStatus.pending:
-        return Colors.orange;
-      case PaymentStatus.partial:
-        return Colors.blue;
-      case PaymentStatus.exempt:
-        return Colors.grey;
-    }
-  }
+  @override
+  State<_FlatCard> createState() => _FlatCardState();
+}
+
+class _FlatCardState extends State<_FlatCard> {
+  final _db = DatabaseService();
 
   @override
   Widget build(BuildContext context) {
-    if (isGrid) {
-      return Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(color: Colors.black.withAlpha(5), blurRadius: 6, offset: const Offset(0, 2))],
-        ),
-        child: Material(
-          color: Colors.white,
-          clipBehavior: Clip.antiAlias,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: Color(0xFFF1F5F9)),
-          ),
-          child: InkWell(
-            onTap: onEdit,
-            child: Padding(
-              padding: const EdgeInsets.all(10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+    final fm = widget.fm;
+    final isPaid = fm.status == PaymentStatus.paid;
+    final isExempt = fm.status == PaymentStatus.exempt;
+    const textColor = Color(0xFF1E293B);
+    const subTextColor = Color(0xFF64748B);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: isPaid ? const Color(0xFFBBF7D0) : (isExempt ? const Color(0xFFE2E8F0) : const Color(0xFFFEF08A)), width: 1.5),
+        boxShadow: [BoxShadow(color: Colors.black.withAlpha(5), blurRadius: 8, offset: const Offset(0, 3))],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () => _showEditDialog(context),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      fm.wingName != null ? '${fm.wingName} - ${fm.flatNumber}' : fm.flatNumber,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: textColor),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: isPaid ? const Color(0xFFDCFCE7) : (isExempt ? const Color(0xFFF1F5F9) : const Color(0xFFFEF9C3)),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        isPaid ? 'Paid' : (isExempt ? 'Exempt' : 'Pending'),
+                        style: TextStyle(color: isPaid ? const Color(0xFF166534) : (isExempt ? subTextColor : const Color(0xFF854D0E)), fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Base Amount', style: TextStyle(color: subTextColor, fontSize: 12)),
+                    Text(
+                      '₹ ${_fmt.format(fm.baseAmount)}',
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: textColor),
+                    ),
+                  ],
+                ),
+                if (fm.extraAmount > 0) ...[
+                  const SizedBox(height: 4),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(color: _statusColor.withAlpha(26), borderRadius: BorderRadius.circular(6)),
-                        child: Text(
-                          fm.status.name.toUpperCase(),
-                          style: TextStyle(color: _statusColor, fontSize: 8, fontWeight: FontWeight.bold),
-                        ),
+                      Text(fm.formattedExtraDetails.isNotEmpty ? fm.formattedExtraDetails : 'Extra', style: const TextStyle(color: subTextColor, fontSize: 12)),
+                      Text(
+                        '+ ₹ ${_fmt.format(fm.extraAmount)}',
+                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF2E7D32)),
                       ),
-                      Icon(Icons.edit_outlined, size: 14, color: const Color(0xFF64748B).withAlpha(150)),
                     ],
                   ),
-                  const Spacer(),
-                  Text(
-                    fm.wingName != null ? '${fm.wingName} - ${fm.flatNumber}' : 'Flat ${fm.flatNumber}',
-                    style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1E293B), fontSize: 12),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '₹ ${_fmt.format(fm.totalAmount)}',
-                    style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF64748B), fontSize: 11),
-                  ),
                 ],
-              ),
+                const Spacer(),
+                const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Total',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: textColor),
+                    ),
+                    Text(
+                      '₹ ${_fmt.format(fm.totalAmount)}',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1565C0)),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ),
-      );
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withAlpha(5), blurRadius: 6, offset: const Offset(0, 2))],
       ),
-      child: Material(
-        color: Colors.white,
-        clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: Color(0xFFF1F5F9)),
-        ),
-        child: ListTile(
-          dense: true,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-          leading: Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(color: _statusColor.withAlpha(26), borderRadius: BorderRadius.circular(10)),
-            alignment: Alignment.center,
-            child: Text(
-              fm.flatNumber,
-              style: TextStyle(color: _statusColor, fontSize: 12, fontWeight: FontWeight.bold),
-            ),
-          ),
-          title: Row(
+    );
+  }
+
+  Future<void> _showEditDialog(BuildContext context) async {
+    PaymentStatus status = widget.fm.status;
+    final extraCtrl = TextEditingController(text: widget.fm.extraAmount > 0 ? widget.fm.extraAmount.toString() : '');
+    final noteCtrl = TextEditingController(text: widget.fm.extraNote ?? '');
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => AlertDialog(
+          title: Text('Flat ${widget.fm.flatNumber} (${widget.fm.wingName ?? ""})'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Expanded(
-                child: Text(
-                  fm.wingName != null ? '${fm.wingName} - ${fm.flatNumber}' : 'Flat ${fm.flatNumber}',
-                  style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1E293B), fontSize: 14),
-                ),
+              DropdownButtonFormField<PaymentStatus>(
+                initialValue: status,
+                decoration: const InputDecoration(labelText: 'Status'),
+                items: const [
+                  DropdownMenuItem(value: PaymentStatus.pending, child: Text('Pending')),
+                  DropdownMenuItem(value: PaymentStatus.paid, child: Text('Paid')),
+                  DropdownMenuItem(value: PaymentStatus.exempt, child: Text('Exempt')),
+                ],
+                onChanged: (v) => setSt(() => status = v!),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(color: _statusColor.withAlpha(26), borderRadius: BorderRadius.circular(6)),
-                child: Text(
-                  fm.status.name.toUpperCase(),
-                  style: TextStyle(color: _statusColor, fontSize: 9, fontWeight: FontWeight.bold),
-                ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: extraCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Extra Amount', prefixText: '₹ '),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: noteCtrl,
+                decoration: const InputDecoration(labelText: 'Extra Note / Remarks'),
               ),
             ],
           ),
-          subtitle: Text(
-            '₹ ${_fmt.format(fm.totalAmount)}${fm.formattedExtraDetails.isNotEmpty ? ' • ${fm.formattedExtraDetails}' : ''}',
-            style: const TextStyle(fontWeight: FontWeight.w500, color: Color(0xFF64748B), fontSize: 12),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          trailing: Icon(Icons.chevron_right, size: 18, color: const Color(0xFF64748B).withAlpha(100)),
-          onTap: onEdit,
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () async {
+                final extra = double.tryParse(extraCtrl.text) ?? 0;
+                final updated = widget.fm.copyWith(
+                  status: status,
+                  extraAmount: extra,
+                  extraNote: noteCtrl.text.trim(),
+                  paidDate: status == PaymentStatus.paid ? (widget.fm.paidDate ?? DateTime.now()) : null,
+                );
+                await _db.updateFlatMaintenance(updated);
+                if (ctx.mounted) Navigator.pop(ctx);
+                widget.onUpdate();
+              },
+              child: const Text('Save'),
+            ),
+          ],
         ),
       ),
     );

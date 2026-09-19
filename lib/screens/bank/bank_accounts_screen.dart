@@ -103,6 +103,18 @@ class BankAccountsScreen extends StatelessWidget {
                                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: textColor),
                                   ),
                                   Text('A/C: ${bank.accountNumber}', style: const TextStyle(color: subTextColor, fontSize: 13)),
+                                  if (bank.wingId != null) ...[
+                                    const SizedBox(height: 4),
+                                    Builder(
+                                      builder: (_) {
+                                        final wing = provider.wings.firstWhere((w) => w.id == bank.wingId, orElse: () => Wing(societyId: 0, name: 'Wing', floors: 1, defaultHousesPerFloor: 1));
+                                        return Text(
+                                          'Wing: ${wing.name}',
+                                          style: const TextStyle(color: primaryBlue, fontSize: 12, fontWeight: FontWeight.bold),
+                                        );
+                                      },
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
@@ -195,11 +207,16 @@ class BankAccountsScreen extends StatelessWidget {
   }
 
   Future<void> _showAddBank(BuildContext context) async {
+    final provider = context.read<AppProvider>();
+    final wings = provider.wings;
+    Wing? selectedWing;
+
     final bankCtrl = TextEditingController();
     final acctCtrl = TextEditingController();
     final holderCtrl = TextEditingController();
     final balCtrl = TextEditingController(text: '0');
     DateTime openingDate = DateTime.now();
+    bool isCommon = false;
     String? error;
 
     const primaryBlue = Color(0xFF1565C0);
@@ -259,6 +276,37 @@ class BankAccountsScreen extends StatelessWidget {
                   ),
                 ],
                 const SizedBox(height: 24),
+                if (wings.isNotEmpty) ...[
+                  _buildFieldLabel('Account Owner / Scope'),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<Wing?>(
+                        value: selectedWing,
+                        isExpanded: true,
+                        items: [
+                          const DropdownMenuItem<Wing?>(
+                            value: null,
+                            child: Text('Society (General / Common Account)', style: TextStyle(fontWeight: FontWeight.bold)),
+                          ),
+                          ...wings.map(
+                            (w) => DropdownMenuItem<Wing?>(
+                              value: w,
+                              child: Text('Wing / Block: ${w.name}', style: TextStyle(fontWeight: FontWeight.w600)),
+                            ),
+                          ),
+                        ],
+                        onChanged: (v) => setSt(() => selectedWing = v),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                ],
                 _buildFieldLabel('Bank Name'),
                 TextField(
                   controller: bankCtrl,
@@ -342,6 +390,18 @@ class BankAccountsScreen extends StatelessWidget {
                     ),
                   ],
                 ),
+                const SizedBox(height: 18),
+                SwitchListTile(
+                  title: const Text(
+                    'Is Society Common / Central Account',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: textColor),
+                  ),
+                  subtitle: const Text('Used for society common expenses & wing transfers', style: TextStyle(fontSize: 12, color: subTextColor)),
+                  value: isCommon,
+                  activeColor: primaryBlue,
+                  contentPadding: EdgeInsets.zero,
+                  onChanged: (val) => setSt(() => isCommon = val),
+                ),
                 const SizedBox(height: 32),
                 SizedBox(
                   width: double.infinity,
@@ -353,11 +413,14 @@ class BankAccountsScreen extends StatelessWidget {
                         return;
                       }
                       final b = BankAccount(
+                        societyId: provider.society?.id,
+                        wingId: selectedWing?.id,
                         bankName: bankCtrl.text.trim(),
                         accountNumber: acctCtrl.text.trim(),
                         accountHolder: holderCtrl.text.trim(),
                         openingBalance: double.tryParse(balCtrl.text) ?? 0,
                         openingDate: openingDate,
+                        isCommon: isCommon,
                       );
                       await context.read<AppProvider>().saveBankAccount(b);
                       if (ctx.mounted) Navigator.pop(ctx);

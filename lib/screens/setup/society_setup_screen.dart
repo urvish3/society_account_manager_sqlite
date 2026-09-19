@@ -21,12 +21,23 @@ class _SocietySetupScreenState extends State<SocietySetupScreen> {
   final _addrCtrl = TextEditingController();
   final _maintCtrl = TextEditingController(text: '1000');
   final _openingCashCtrl = TextEditingController(text: '0');
+  bool _autoReflectCommon = true;
+  String _expenseDistributionMode = 'equal';
   bool _isSavingBasic = false;
+  final Map<int, TextEditingController> _wingShareControllers = {};
 
   static const primaryBlue = Color(0xFF1565C0);
   static const bgBlue = Color(0xFFF8FAFC);
   static const textColor = Color(0xFF1E293B);
   static const subTextColor = Color(0xFF64748B);
+
+  void _syncWingControllers(List<Wing> wings) {
+    for (final w in wings) {
+      if (!_wingShareControllers.containsKey(w.id)) {
+        _wingShareControllers[w.id!] = TextEditingController(text: w.allocationPercentage.toString());
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -36,6 +47,8 @@ class _SocietySetupScreenState extends State<SocietySetupScreen> {
       _addrCtrl.text = widget.society!.address;
       _maintCtrl.text = widget.society!.defaultMaintenance.toString();
       _openingCashCtrl.text = widget.society!.openingCashBalance.toString();
+      _autoReflectCommon = widget.society!.autoReflectCommonExpenses;
+      _expenseDistributionMode = widget.society!.expenseDistributionMode;
     }
   }
 
@@ -121,6 +134,119 @@ class _SocietySetupScreenState extends State<SocietySetupScreen> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 18),
+                  SwitchListTile(
+                    title: const Text(
+                      'Auto-Reflect Common Expenses in Wings',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: textColor),
+                    ),
+                    subtitle: const Text('Automatically allocate and reflect society common expenses in wing reports', style: TextStyle(fontSize: 12, color: subTextColor)),
+                    value: _autoReflectCommon,
+                    activeColor: primaryBlue,
+                    contentPadding: EdgeInsets.zero,
+                    onChanged: (val) => setState(() => _autoReflectCommon = val),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildFieldLabel('Expense Distribution Mode'),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: _expenseDistributionMode,
+                        isExpanded: true,
+                        items: const [
+                          DropdownMenuItem(value: 'equal', child: Text('Equal Distribution across Wings')),
+                          DropdownMenuItem(value: 'percentage', child: Text('Percentage / Share-Based Distribution')),
+                        ],
+                        onChanged: (val) {
+                          if (val != null) setState(() => _expenseDistributionMode = val);
+                        },
+                      ),
+                    ),
+                  ),
+                  if (_expenseDistributionMode == 'percentage') ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Wing Share Percentages (Must sum to 100%)',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: textColor),
+                          ),
+                          const SizedBox(height: 12),
+                          if (provider.wings.isEmpty)
+                            const Text('Please add at least one wing/block below first.', style: TextStyle(color: subTextColor, fontSize: 13))
+                          else ...[
+                            ...provider.wings.map((wing) {
+                              _syncWingControllers(provider.wings);
+                              final ctrl = _wingShareControllers[wing.id!] ?? TextEditingController(text: '${wing.allocationPercentage}');
+                              _wingShareControllers[wing.id!] = ctrl;
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        wing.name,
+                                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: textColor),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    SizedBox(
+                                      width: 100,
+                                      child: TextField(
+                                        controller: ctrl,
+                                        keyboardType: TextInputType.number,
+                                        decoration: _inputDecoration('%').copyWith(suffixText: '%'),
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                        onChanged: (_) => setState(() {}),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }),
+                            Builder(
+                              builder: (ctx) {
+                                double total = 0;
+                                for (final w in provider.wings) {
+                                  final ctrl = _wingShareControllers[w.id!];
+                                  total += double.tryParse(ctrl?.text ?? '') ?? w.allocationPercentage;
+                                }
+                                bool isValid = (total - 100.0).abs() < 0.01;
+                                return Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      'Total Share: ${total.toStringAsFixed(1)}%',
+                                      style: TextStyle(fontWeight: FontWeight.bold, color: isValid ? const Color(0xFF10B981) : const Color(0xFFEF4444)),
+                                    ),
+                                    if (!isValid)
+                                      const Text(
+                                        'Must equal 100%',
+                                        style: TextStyle(fontSize: 12, color: Color(0xFFEF4444), fontWeight: FontWeight.w600),
+                                      ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 24),
                   SizedBox(
                     width: double.infinity,
@@ -402,19 +528,53 @@ class _SocietySetupScreenState extends State<SocietySetupScreen> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Society name is required')));
       return;
     }
-    setState(() => _isSavingBasic = true);
+
     final provider = context.read<AppProvider>();
+    if (_expenseDistributionMode == 'percentage' && provider.wings.isNotEmpty) {
+      double total = 0;
+      for (final w in provider.wings) {
+        final ctrl = _wingShareControllers[w.id!];
+        total += double.tryParse(ctrl?.text ?? '') ?? w.allocationPercentage;
+      }
+      if ((total - 100.0).abs() > 0.01) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: Wing shares sum to ${total.toStringAsFixed(1)}%. Must equal 100%')));
+        return;
+      }
+    }
+
+    setState(() => _isSavingBasic = true);
     final s = Society(
       id: provider.society?.id,
       name: _nameCtrl.text.trim(),
       address: _addrCtrl.text.trim(),
       defaultMaintenance: double.tryParse(_maintCtrl.text) ?? 1000,
       openingCashBalance: double.tryParse(_openingCashCtrl.text) ?? 0,
+      autoReflectCommonExpenses: _autoReflectCommon,
+      expenseDistributionMode: _expenseDistributionMode,
     );
     await provider.saveSociety(s);
+
+    if (_expenseDistributionMode == 'percentage') {
+      for (final w in provider.wings) {
+        final ctrl = _wingShareControllers[w.id!];
+        if (ctrl != null) {
+          w.allocationPercentage = double.tryParse(ctrl.text) ?? w.allocationPercentage;
+          await DatabaseService().updateWing(w);
+        }
+      }
+      await provider.init();
+    } else if (_expenseDistributionMode == 'equal' && provider.wings.isNotEmpty) {
+      double equalShare = double.parse((100.0 / provider.wings.length).toStringAsFixed(2));
+      for (final w in provider.wings) {
+        w.allocationPercentage = equalShare;
+        await DatabaseService().updateWing(w);
+      }
+      await provider.init();
+    }
+
     setState(() => _isSavingBasic = false);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Society info saved! Now add structures.')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Society info & share settings saved successfully!')));
     }
   }
 
@@ -496,7 +656,10 @@ class _WingCard extends StatelessWidget {
               wing.structureType,
               style: const TextStyle(fontSize: 12, color: primaryBlue, fontWeight: FontWeight.w500),
             ),
-            Text('${wing.floors} floors  •  ${wing.defaultHousesPerFloor} units/floor', style: const TextStyle(fontSize: 13, color: subTextColor)),
+            Text(
+              '${wing.floors} floors  •  ${wing.defaultHousesPerFloor} units/floor  •  Share: ${wing.allocationPercentage}%',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF10B981)),
+            ),
           ],
         ),
         trailing: Row(
@@ -530,6 +693,8 @@ class _AddWingSheetState extends State<_AddWingSheet> {
   final _nameCtrl = TextEditingController();
   final _floorsCtrl = TextEditingController(text: '1');
   final _hpfCtrl = TextEditingController(text: '4');
+  final _defMaintCtrl = TextEditingController(text: '1000');
+  final _openingCashCtrl = TextEditingController(text: '0');
   String _structureType = 'Residential Apartment';
   bool _isSaving = false;
 
@@ -568,8 +733,8 @@ class _AddWingSheetState extends State<_AddWingSheet> {
       _floorsCtrl.text = widget.wing!.floors.toString();
       _hpfCtrl.text = widget.wing!.defaultHousesPerFloor.toString();
       _structureType = widget.wing!.structureType;
-      // Note: Legacy data might not perfectly map to new complex modes,
-      // but we'll default to the standard view for editing.
+      _defMaintCtrl.text = widget.wing!.defaultMaintenance.toString();
+      _openingCashCtrl.text = widget.wing!.openingCashBalance.toString();
     }
   }
 
@@ -676,6 +841,22 @@ class _AddWingSheetState extends State<_AddWingSheet> {
             TextField(
               controller: _nameCtrl,
               decoration: _inputDecoration('e.g. Wing A, Phase 1'),
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 18),
+            _buildFieldLabel('Default Maintenance Amount (₹)'),
+            TextField(
+              controller: _defMaintCtrl,
+              keyboardType: TextInputType.number,
+              decoration: _inputDecoration('e.g. 1000'),
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 18),
+            _buildFieldLabel('Opening Cash Balance (₹)'),
+            TextField(
+              controller: _openingCashCtrl,
+              keyboardType: TextInputType.number,
+              decoration: _inputDecoration('e.g. 0'),
               style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 18),
@@ -944,6 +1125,15 @@ class _AddWingSheetState extends State<_AddWingSheet> {
     );
   }
 
+  bool _areSharesEqual(List<Wing> wings) {
+    if (wings.isEmpty) return true;
+    double expected = double.parse((100.0 / wings.length).toStringAsFixed(2));
+    for (final w in wings) {
+      if ((w.allocationPercentage - expected).abs() > 0.5) return false;
+    }
+    return true;
+  }
+
   Future<void> _save() async {
     if (_nameCtrl.text.trim().isEmpty) return;
     setState(() => _isSaving = true);
@@ -961,7 +1151,44 @@ class _AddWingSheetState extends State<_AddWingSheet> {
         hpf = int.tryParse(_hpfCtrl.text) ?? 4;
       }
 
-      final wing = Wing(id: widget.wing?.id, societyId: widget.society.id!, name: _nameCtrl.text.trim(), floors: floors, defaultHousesPerFloor: hpf, structureType: _structureType);
+      final existingWings = await db.getWings(widget.society.id!);
+      double allocationPct = 100.0;
+      if (widget.wing == null) {
+        if (existingWings.isEmpty) {
+          allocationPct = 100.0;
+        } else if (_areSharesEqual(existingWings)) {
+          double newShare = double.parse((100.0 / (existingWings.length + 1)).toStringAsFixed(2));
+          for (final ew in existingWings) {
+            ew.allocationPercentage = newShare;
+            await db.updateWing(ew);
+          }
+          allocationPct = newShare;
+        } else {
+          allocationPct = 0.0;
+        }
+      } else {
+        allocationPct = widget.wing!.allocationPercentage;
+      }
+
+      final wing = Wing(
+        id: widget.wing?.id,
+        societyId: widget.society.id!,
+        name: _nameCtrl.text.trim(),
+        floors: floors,
+        defaultHousesPerFloor: hpf,
+        structureType: _structureType,
+        allocationPercentage: allocationPct,
+        defaultMaintenance: double.tryParse(_defMaintCtrl.text) ?? 1000.0,
+        openingCashBalance: double.tryParse(_openingCashCtrl.text) ?? 0.0,
+      );
+
+      if (widget.wing == null && existingWings.isNotEmpty && !_areSharesEqual(existingWings)) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Custom shares detected. Please update and re-balance wing shares in Society Setup.')),
+          );
+        }
+      }
 
       if (wing.id == null) {
         final wingId = await db.insertWing(wing);

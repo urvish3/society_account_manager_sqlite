@@ -6,8 +6,10 @@ import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../providers/app_provider.dart';
 import '../services/database_service.dart';
+import '../services/report_service.dart';
 import 'bank/bank_accounts_screen.dart';
 import 'maintenance/maintenance_screen.dart';
+import 'reports/common_account_report_screen.dart';
 import 'reports/report_screen.dart';
 import 'setup/society_setup_screen.dart';
 import 'transactions/transactions_screen.dart';
@@ -138,7 +140,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       await _loadSocieties();
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Database imported and replaced successfully!')));
                     }
-                  } catch (e) {
+                  } catch (e, st) {
+                    debugPrint('Import database error: $e\n$st');
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to import database: $e')));
                     }
@@ -432,6 +435,12 @@ class _SocietyDashboardState extends State<SocietyDashboard> {
                   color: const Color(0xFF06B6D4),
                   onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ReportScreen())).then((_) => _refresh()),
                 ),
+                _ModuleTile(
+                  icon: Icons.account_balance_wallet_rounded,
+                  label: 'Common & Balances',
+                  color: const Color(0xFF7C3AED),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CommonAccountReportScreen())).then((_) => _refresh()),
+                ),
               ],
             ),
             const SizedBox(height: 16),
@@ -514,6 +523,9 @@ class _BalanceCards extends StatefulWidget {
 
 class _BalanceCardsState extends State<_BalanceCards> {
   MonthlySummary? _summary;
+  List<WingBalanceSummary> _wingBalances = [];
+  Wing? _selectedWing;
+  bool _loading = true;
 
   @override
   void initState() {
@@ -524,24 +536,83 @@ class _BalanceCardsState extends State<_BalanceCards> {
   Future<void> _load() async {
     final provider = context.read<AppProvider>();
     if (provider.society == null) return;
+    setState(() => _loading = true);
     final db = DatabaseService();
     final s = await db.computeMonthlySummary(widget.year, widget.month, societyId: provider.society!.id);
-    if (mounted) setState(() => _summary = s);
+    final wb = await ReportService().computeWingBalances(provider.society!.id, year: widget.year, month: widget.month);
+    if (mounted) {
+      setState(() {
+        _summary = s;
+        _wingBalances = wb;
+        _loading = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_summary == null) {
-      return const SizedBox(height: 90, child: Center(child: CircularProgressIndicator()));
+    if (_loading || _summary == null) {
+      return const SizedBox(height: 120, child: Center(child: CircularProgressIndicator()));
     }
-    return Row(
+
+    final provider = context.watch<AppProvider>();
+    final wings = provider.wings;
+
+    double cash = _summary!.closingCashBalance;
+    double bank = _summary!.closingBankBalance;
+
+    if (_selectedWing != null) {
+      final match = _wingBalances.firstWhere(
+        (wb) => wb.wing.id == _selectedWing!.id,
+        orElse: () => WingBalanceSummary(wing: _selectedWing!, cashBalance: 0, bankBalance: 0, totalBalance: 0),
+      );
+      cash = match.cashBalance;
+      bank = match.bankBalance;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: _BalanceCard(label: 'Cash In Hand', amount: _summary!.closingCashBalance, icon: Icons.wallet_rounded, color: const Color(0xFF2E7D32), bgColor: const Color(0xFFE8F5E9)),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _BalanceCard(label: 'Bank Balance', amount: _summary!.closingBankBalance, icon: Icons.account_balance_rounded, color: const Color(0xFF1565C0), bgColor: const Color(0xFFE3F2FD)),
+        if (wings.isNotEmpty) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<Wing?>(
+                value: _selectedWing,
+                isExpanded: true,
+                items: [
+                  const DropdownMenuItem<Wing?>(
+                    value: null,
+                    child: Text('Society (Overall Balance)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  ),
+                  ...wings.map(
+                    (w) => DropdownMenuItem<Wing?>(
+                      value: w,
+                      child: Text('Wing / Block: ${w.name}', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                    ),
+                  ),
+                ],
+                onChanged: (v) => setState(() => _selectedWing = v),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        Row(
+          children: [
+            Expanded(
+              child: _BalanceCard(label: 'Cash In Hand', amount: cash, icon: Icons.wallet_rounded, color: const Color(0xFF2E7D32), bgColor: const Color(0xFFE8F5E9)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _BalanceCard(label: 'Bank Balance', amount: bank, icon: Icons.account_balance_rounded, color: const Color(0xFF1565C0), bgColor: const Color(0xFFE3F2FD)),
+            ),
+          ],
         ),
       ],
     );

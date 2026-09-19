@@ -7,10 +7,28 @@ class Society {
   String address;
   double defaultMaintenance;
   double openingCashBalance;
+  bool autoReflectCommonExpenses;
+  String expenseDistributionMode;
 
-  Society({this.id, required this.name, required this.address, required this.defaultMaintenance, this.openingCashBalance = 0});
+  Society({
+    this.id,
+    required this.name,
+    required this.address,
+    required this.defaultMaintenance,
+    this.openingCashBalance = 0,
+    this.autoReflectCommonExpenses = true,
+    this.expenseDistributionMode = 'equal',
+  });
 
-  Map<String, dynamic> toMap() => {'id': id, 'name': name, 'address': address, 'defaultMaintenance': defaultMaintenance, 'openingCashBalance': openingCashBalance};
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'name': name,
+    'address': address,
+    'defaultMaintenance': defaultMaintenance,
+    'openingCashBalance': openingCashBalance,
+    'autoReflectCommonExpenses': autoReflectCommonExpenses ? 1 : 0,
+    'expenseDistributionMode': expenseDistributionMode,
+  };
 
   factory Society.fromMap(Map<String, dynamic> m) => Society(
     id: m['id'],
@@ -18,6 +36,8 @@ class Society {
     address: m['address'],
     defaultMaintenance: (m['defaultMaintenance'] as num).toDouble(),
     openingCashBalance: (m['openingCashBalance'] as num? ?? 0).toDouble(),
+    autoReflectCommonExpenses: m['autoReflectCommonExpenses'] == 1 || m['autoReflectCommonExpenses'] == null,
+    expenseDistributionMode: m['expenseDistributionMode'] ?? 'equal',
   );
 }
 
@@ -28,6 +48,9 @@ class Wing {
   int floors;
   int defaultHousesPerFloor;
   String structureType;
+  double allocationPercentage;
+  double defaultMaintenance;
+  double openingCashBalance;
 
   Wing({
     this.id,
@@ -36,6 +59,9 @@ class Wing {
     required this.floors,
     required this.defaultHousesPerFloor,
     this.structureType = 'Residential Apartment',
+    this.allocationPercentage = 100.0,
+    this.defaultMaintenance = 1000.0,
+    this.openingCashBalance = 0.0,
   });
 
   Map<String, dynamic> toMap() => {
@@ -45,6 +71,9 @@ class Wing {
     'floors': floors,
     'defaultHousesPerFloor': defaultHousesPerFloor,
     'structureType': structureType,
+    'allocationPercentage': allocationPercentage,
+    'defaultMaintenance': defaultMaintenance,
+    'openingCashBalance': openingCashBalance,
   };
 
   factory Wing.fromMap(Map<String, dynamic> m) => Wing(
@@ -54,7 +83,18 @@ class Wing {
     floors: m['floors'],
     defaultHousesPerFloor: m['defaultHousesPerFloor'],
     structureType: m['structureType'] ?? 'Residential Apartment',
+    allocationPercentage: (m['allocationPercentage'] as num? ?? 100.0).toDouble(),
+    defaultMaintenance: (m['defaultMaintenance'] as num? ?? 1000.0).toDouble(),
+    openingCashBalance: (m['openingCashBalance'] as num? ?? 0.0).toDouble(),
   );
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Wing && runtimeType == other.runtimeType && id == other.id && name == other.name;
+
+  @override
+  int get hashCode => id.hashCode ^ name.hashCode;
 }
 
 class Flat {
@@ -106,22 +146,23 @@ class Flat {
 class MaintenanceMonth {
   int? id;
   int? societyId;
+  int? wingId;
   int year;
   int month; // 1-12
   double defaultAmount;
   String? notes;
 
-  MaintenanceMonth({this.id, this.societyId, required this.year, required this.month, required this.defaultAmount, this.notes});
+  MaintenanceMonth({this.id, this.societyId, this.wingId, required this.year, required this.month, required this.defaultAmount, this.notes});
 
   String get label {
     const months = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
     return '${months[month]} $year';
   }
 
-  Map<String, dynamic> toMap() => {'id': id, 'societyId': societyId, 'year': year, 'month': month, 'defaultAmount': defaultAmount, 'notes': notes};
+  Map<String, dynamic> toMap() => {'id': id, 'societyId': societyId, 'wingId': wingId, 'year': year, 'month': month, 'defaultAmount': defaultAmount, 'notes': notes};
 
   factory MaintenanceMonth.fromMap(Map<String, dynamic> m) =>
-      MaintenanceMonth(id: m['id'], societyId: m['societyId'], year: m['year'], month: m['month'], defaultAmount: (m['defaultAmount'] as num).toDouble(), notes: m['notes']);
+      MaintenanceMonth(id: m['id'], societyId: m['societyId'], wingId: m['wingId'], year: m['year'], month: m['month'], defaultAmount: (m['defaultAmount'] as num).toDouble(), notes: m['notes']);
 }
 
 enum PaymentStatus { pending, paid, partial, exempt }
@@ -313,6 +354,9 @@ class Transaction {
   int? bankAccountId;
   int? toBankAccountId;
   String? relatedFlatNumber; // for flat-specific income
+  int? wingId;
+  bool isCommonExpense;
+  String distributionMode;
   int year;
   int month;
 
@@ -328,6 +372,9 @@ class Transaction {
     this.bankAccountId,
     this.toBankAccountId,
     this.relatedFlatNumber,
+    this.wingId,
+    this.isCommonExpense = false,
+    this.distributionMode = 'equal',
     required this.year,
     required this.month,
   });
@@ -344,6 +391,9 @@ class Transaction {
     'bankAccountId': bankAccountId,
     'toBankAccountId': toBankAccountId,
     'relatedFlatNumber': relatedFlatNumber,
+    'wingId': wingId,
+    'isCommonExpense': isCommonExpense ? 1 : 0,
+    'distributionMode': distributionMode,
     'year': year,
     'month': month,
   };
@@ -360,6 +410,9 @@ class Transaction {
     bankAccountId: m['bankAccountId'],
     toBankAccountId: m['toBankAccountId'],
     relatedFlatNumber: m['relatedFlatNumber'],
+    wingId: m['wingId'],
+    isCommonExpense: m['isCommonExpense'] == 1,
+    distributionMode: m['distributionMode'] ?? 'equal',
     year: m['year'],
     month: m['month'],
   );
@@ -370,43 +423,97 @@ class Transaction {
 class BankAccount {
   int? id;
   int? societyId;
+  int? wingId;
   String bankName;
   String accountNumber;
   String accountHolder;
   double openingBalance;
   DateTime openingDate;
   bool isActive;
+  bool isCommon;
+  bool isCash;
 
   BankAccount({
     this.id,
     this.societyId,
+    this.wingId,
     required this.bankName,
     required this.accountNumber,
     required this.accountHolder,
     required this.openingBalance,
     required this.openingDate,
     this.isActive = true,
+    this.isCommon = false,
+    this.isCash = false,
   });
 
   Map<String, dynamic> toMap() => {
     'id': id,
     'societyId': societyId,
+    'wingId': wingId,
     'bankName': bankName,
     'accountNumber': accountNumber,
     'accountHolder': accountHolder,
     'openingBalance': openingBalance,
     'openingDate': openingDate.toIso8601String(),
     'isActive': isActive ? 1 : 0,
+    'isCommon': isCommon ? 1 : 0,
+    'isCash': isCash ? 1 : 0,
   };
 
   factory BankAccount.fromMap(Map<String, dynamic> m) => BankAccount(
     id: m['id'],
     societyId: m['societyId'],
+    wingId: m['wingId'],
     bankName: m['bankName'],
     accountNumber: m['accountNumber'],
     accountHolder: m['accountHolder'],
     openingBalance: (m['openingBalance'] as num).toDouble(),
     openingDate: DateTime.parse(m['openingDate']),
     isActive: m['isActive'] == 1,
+    isCommon: m['isCommon'] == 1,
+    isCash: m['isCash'] == 1,
   );
+}
+
+// ── Common Account & Wing Allocation Reports ─────
+
+class WingAllocationSummary {
+  final Wing wing;
+  final double totalTransferred;
+  final double allocatedExpenseShare;
+  final double surplusBalance;
+
+  WingAllocationSummary({
+    required this.wing,
+    required this.totalTransferred,
+    required this.allocatedExpenseShare,
+    required this.surplusBalance,
+  });
+}
+
+class CommonAccountReport {
+  final Society society;
+  final double totalCommonExpenses;
+  final List<WingAllocationSummary> wingSummaries;
+
+  CommonAccountReport({
+    required this.society,
+    required this.totalCommonExpenses,
+    required this.wingSummaries,
+  });
+}
+
+class WingBalanceSummary {
+  final Wing wing;
+  final double cashBalance;
+  final double bankBalance;
+  final double totalBalance;
+
+  WingBalanceSummary({
+    required this.wing,
+    required this.cashBalance,
+    required this.bankBalance,
+    required this.totalBalance,
+  });
 }

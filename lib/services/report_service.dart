@@ -17,6 +17,164 @@ final _dateFmt = DateFormat('dd/MM/yyyy');
 class ReportService {
   final _db = DatabaseService();
 
+  // ── Common Account & Wing Allocation Report ──
+
+  Future<CommonAccountReport> computeCommonAccountReport(int? societyId, {int? year, int? month}) async {
+    final societies = await _db.getSocieties();
+    final society = societies.firstWhere(
+      (s) => s.id == societyId,
+      orElse: () => societies.isNotEmpty ? societies.first : Society(name: '', address: '', defaultMaintenance: 0),
+    );
+
+    final wings = await _db.getWings(society.id!);
+
+    List<Transaction> allTxns;
+    if (year != null && month != null) {
+      allTxns = await _db.getTransactions(year, month, societyId: society.id);
+    } else {
+      allTxns = await _db.getAllTransactions(societyId: society.id);
+    }
+
+    final commonBankIds = (await _db.getBankAccounts(societyId: society.id)).where((b) => b.isCommon).map((b) => b.id).toSet();
+
+    final commonExpenses = allTxns.where((t) {
+      if (t.type != TransactionType.expense) return false;
+      if (t.isCommonExpense) return true;
+      if (t.bankAccountId != null && commonBankIds.contains(t.bankAccountId)) return true;
+      return false;
+    }).toList();
+
+    double totalCommonExpenses = commonExpenses.fold(0.0, (sum, t) => sum + t.amount);
+
+    final wingSummaries = <WingAllocationSummary>[];
+    final totalPercentage = wings.fold(0.0, (sum, w) => sum + w.allocationPercentage);
+
+    for (final wing in wings) {
+      final wingTransfers = allTxns.where((t) {
+        if (t.wingId == wing.id) return true;
+        if (t.description.toLowerCase().contains(wing.name.toLowerCase()) && (t.type == TransactionType.bankToBank || t.type == TransactionType.expense || t.type == TransactionType.cashToBank)) {
+          return true;
+        }
+        return false;
+      }).toList();
+
+      double totalTransferred = wingTransfers.fold(0.0, (sum, t) => sum + t.amount);
+
+      double share = 0;
+      if (wings.isNotEmpty) {
+        if (society.expenseDistributionMode == 'percentage' && totalPercentage > 0) {
+          share = totalCommonExpenses * (wing.allocationPercentage / totalPercentage);
+        } else {
+          share = totalCommonExpenses / wings.length;
+        }
+      }
+
+      double surplusBalance = totalTransferred - share;
+
+      wingSummaries.add(
+        WingAllocationSummary(
+          wing: wing,
+          totalTransferred: double.parse(totalTransferred.toStringAsFixed(2)),
+          allocatedExpenseShare: double.parse(share.toStringAsFixed(2)),
+          surplusBalance: double.parse(surplusBalance.toStringAsFixed(2)),
+        ),
+      );
+    }
+
+    return CommonAccountReport(
+      society: society,
+      totalCommonExpenses: double.parse(totalCommonExpenses.toStringAsFixed(2)),
+      wingSummaries: wingSummaries,
+    );
+  }
+
+  // ── Wing Balances (Cash & Bank) ────────────
+
+  Future<List<WingBalanceSummary>> computeWingBalances(int? societyId, {int? year, int? month}) async {
+    final societies = await _db.getSocieties();
+    final society = societies.firstWhere((s) => s.id == societyId, orElse: () => societies.first);
+    final wings = await _db.getWings(societyId!);
+    final allMms = await _db.getAllMaintenanceMonths(societyId: societyId);
+    final allTxns = await _db.getAllTransactions(societyId: societyId);
+    final allAccounts = await _db.getBankAccounts(societyId: societyId);
+
+    final summaries = <WingBalanceSummary>[];
+
+    for (final wing in wings) {
+      final flats = await _db.getFlats(wing.id!);
+      final flatIds = flats.map((f) => f.id!).toSet();
+
+      double cashCollected = 0;
+      double bankCollected = 0;
+
+      for (final mm in allMms) {
+        if (mm.wingId != null && mm.wingId != wing.id) continue;
+        if (year != null && month != null && (mm.year != year || mm.month != month)) continue;
+        final fms = await _db.getFlatMaintenances(mm.id!);
+        for (final fm in fms) {
+          if (flatIds.contains(fm.flatId) && fm.status == PaymentStatus.paid) {
+            if (fm.bankAccountId != null) {
+              bankCollected += fm.totalAmount;
+            } else {
+              cashCollected += fm.totalAmount;
+            }
+          }
+        }
+      }
+
+      final bool isPrimaryWing = wings.length == 1 || wing.name.toLowerCase().contains('g');
+      final wingTxns = allTxns.where((t) {
+        if (t.wingId == wing.id || (isPrimaryWing && t.wingId == null)) {
+          if (year != null && month != null && (t.year != year || t.month != month)) return false;
+          return true;
+        }
+        return false;
+      }).toList();
+
+      double cashIncome = 0;
+      double bankIncome = 0;
+      double cashExpense = 0;
+      double bankExpense = 0;
+      double cashToBank = 0;
+      double bankToCash = 0;
+
+      for (final t in wingTxns) {
+        if (t.type == TransactionType.income) {
+          if (t.bankAccountId != null)
+            bankIncome += t.amount;
+          else
+            cashIncome += t.amount;
+        } else if (t.type == TransactionType.expense) {
+          if (t.bankAccountId != null)
+            bankExpense += t.amount;
+          else
+            cashExpense += t.amount;
+        } else if (t.type == TransactionType.cashToBank) {
+          cashToBank += t.amount;
+        } else if (t.type == TransactionType.bankToCash) {
+          bankToCash += t.amount;
+        }
+      }
+
+      double openingCash = isPrimaryWing ? society.openingCashBalance : 0.0;
+      double openingBank = allAccounts.where((b) => b.wingId == wing.id || (isPrimaryWing && b.wingId == null)).fold(0.0, (sum, b) => sum + b.openingBalance);
+
+      double cashBal = openingCash + cashCollected + cashIncome - cashExpense - cashToBank + bankToCash;
+      double bankBal = openingBank + bankCollected + bankIncome - bankExpense + cashToBank - bankToCash;
+
+      summaries.add(
+        WingBalanceSummary(
+          wing: wing,
+          cashBalance: double.parse(cashBal.toStringAsFixed(2)),
+          bankBalance: double.parse(bankBal.toStringAsFixed(2)),
+          totalBalance: double.parse((cashBal + bankBal).toStringAsFixed(2)),
+        ),
+      );
+    }
+
+    return summaries;
+  }
+
   // ── Excel Report ───────────────────────────
 
   Future<File> generateExcelReport(int year, int month, {int? societyId}) async {

@@ -25,6 +25,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> with SingleTick
   List<Transaction> _transactions = [];
   MonthlySummary? _summary;
   int? _bankFilterId; // null = All, -1 = Cash, else = BankId
+  int? _selectedWingId; // null = All / Common, else = Wing ID
 
   static const primaryBlue = Color(0xFF1565C0);
   static const bgBlue = Color(0xFFF8FAFC);
@@ -38,6 +39,8 @@ class _TransactionsScreenState extends State<TransactionsScreen> with SingleTick
     _load();
   }
 
+  MonthlySummary? _wingSummary;
+
   Future<void> _load() async {
     final provider = context.read<AppProvider>();
     final txns = await _db.getTransactions(_year, _month, societyId: provider.society?.id);
@@ -46,10 +49,63 @@ class _TransactionsScreenState extends State<TransactionsScreen> with SingleTick
       _transactions = txns;
       _summary = summary;
     });
+    await _loadWingSummary();
+  }
+
+  Future<void> _loadWingSummary() async {
+    final provider = context.read<AppProvider>();
+    final allMms = await _db.getAllMaintenanceMonths(societyId: provider.society?.id);
+    double wingMaintCollected = 0;
+    for (final mm in allMms) {
+      if (mm.year == _year && mm.month == _month) {
+        if (_selectedWingId == null || mm.wingId == _selectedWingId || mm.wingId == null) {
+          final fms = await _db.getFlatMaintenances(mm.id!);
+          for (final fm in fms) {
+            if (fm.status == PaymentStatus.paid) {
+              if (_selectedWingId != null) {
+                final flat = provider.allFlats.where((f) => f.id == fm.flatId).firstOrNull;
+                if (flat == null || flat.wingId == _selectedWingId) {
+                  wingMaintCollected += fm.totalAmount;
+                }
+              } else {
+                wingMaintCollected += fm.totalAmount;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    final incomeTxns = _ofType(TransactionType.income);
+    final expenseTxns = _ofType(TransactionType.expense);
+    double totalIncomeTxn = incomeTxns.fold(0.0, (sum, t) => sum + t.amount);
+    double totalExpense = expenseTxns.fold(0.0, (sum, t) => sum + t.amount);
+
+    if (mounted) {
+      setState(() {
+        _wingSummary = MonthlySummary(
+          year: _year,
+          month: _month,
+          openingCashBalance: _summary?.openingCashBalance ?? 0,
+          openingBankBalance: _summary?.openingBankBalance ?? 0,
+          cashIncome: totalIncomeTxn + wingMaintCollected,
+          bankIncome: 0,
+          cashExpense: totalExpense,
+          bankExpense: 0,
+          cashToBank: 0,
+          bankToCash: 0,
+          cashMaintenanceCollected: wingMaintCollected,
+          bankMaintenanceCollected: 0,
+        );
+      });
+    }
   }
 
   List<Transaction> _ofType(TransactionType type) {
     var list = _transactions.where((t) => t.type == type).toList();
+    if (_selectedWingId != null) {
+      list = list.where((t) => t.wingId == _selectedWingId || t.wingId == null || t.isCommonExpense).toList();
+    }
     if (_bankFilterId == -1) {
       list = list.where((t) => t.bankAccountId == null).toList();
     } else if (_bankFilterId != null) {
@@ -60,6 +116,9 @@ class _TransactionsScreenState extends State<TransactionsScreen> with SingleTick
 
   List<Transaction> _transfers() {
     var list = _transactions.where((t) => t.type == TransactionType.cashToBank || t.type == TransactionType.bankToCash || t.type == TransactionType.bankToBank).toList();
+    if (_selectedWingId != null) {
+      list = list.where((t) => t.wingId == _selectedWingId || t.wingId == null).toList();
+    }
     if (_bankFilterId != null && _bankFilterId != -1) {
       list = list.where((t) => t.bankAccountId == _bankFilterId || t.toBankAccountId == _bankFilterId).toList();
     }
@@ -112,7 +171,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> with SingleTick
           _MonthSummaryBar(
             year: _year,
             month: _month,
-            summary: _summary,
+            summary: _wingSummary,
             onMonthChanged: (y, m) {
               setState(() {
                 _year = y;
@@ -122,13 +181,41 @@ class _TransactionsScreenState extends State<TransactionsScreen> with SingleTick
             },
           ),
           Container(
+            height: 50,
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              children: [
+                _FilterChip(
+                  label: 'All / Common',
+                  selected: _selectedWingId == null,
+                  onSelected: () {
+                    setState(() => _selectedWingId = null);
+                    _loadWingSummary();
+                  },
+                ),
+                ...provider.wings.map(
+                  (w) => _FilterChip(
+                    label: w.name,
+                    selected: _selectedWingId == w.id,
+                    onSelected: () {
+                      setState(() => _selectedWingId = w.id);
+                      _loadWingSummary();
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
             height: 54,
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: ListView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
               children: [
-                _FilterChip(label: 'All', selected: _bankFilterId == null, onSelected: () => setState(() => _bankFilterId = null)),
+                _FilterChip(label: 'All Accounts', selected: _bankFilterId == null, onSelected: () => setState(() => _bankFilterId = null)),
                 _FilterChip(label: 'Cash', selected: _bankFilterId == -1, onSelected: () => setState(() => _bankFilterId = -1)),
                 ...provider.bankAccounts.map((b) => _FilterChip(label: b.bankName, selected: _bankFilterId == b.id, onSelected: () => setState(() => _bankFilterId = b.id))),
               ],
@@ -207,6 +294,16 @@ class _TransactionsScreenState extends State<TransactionsScreen> with SingleTick
     if (existing?.toBankAccountId != null) {
       try {
         selectedToBank = bankAccounts.firstWhere((b) => b.id == existing!.toBankAccountId);
+      } catch (_) {}
+    }
+
+    final wings = provider.wings;
+    bool isCommonExpense = existing?.isCommonExpense ?? false;
+    String distributionMode = existing?.distributionMode ?? 'equal';
+    Wing? selectedWing;
+    if (existing?.wingId != null) {
+      try {
+        selectedWing = wings.firstWhere((w) => w.id == existing!.wingId);
       } catch (_) {}
     }
 
@@ -346,6 +443,37 @@ class _TransactionsScreenState extends State<TransactionsScreen> with SingleTick
                     ),
                   ),
                   const SizedBox(height: 20),
+                  if (wings.isNotEmpty) ...[
+                    _buildFieldLabel('Transaction Account / Scope'),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<Wing?>(
+                          value: selectedWing,
+                          isExpanded: true,
+                          items: [
+                            const DropdownMenuItem<Wing?>(
+                              value: null,
+                              child: Text('Society (General / Common Account)', style: TextStyle(fontWeight: FontWeight.bold)),
+                            ),
+                            ...wings.map(
+                              (w) => DropdownMenuItem<Wing?>(
+                                value: w,
+                                child: Text('Wing / Block: ${w.name}', style: TextStyle(fontWeight: FontWeight.w600)),
+                              ),
+                            ),
+                          ],
+                          onChanged: (v) => setSt(() => selectedWing = v),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
                   if (type != TransactionType.income)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -529,6 +657,34 @@ class _TransactionsScreenState extends State<TransactionsScreen> with SingleTick
                     ),
                     const SizedBox(height: 18),
                   ],
+                  if (type == TransactionType.expense) ...[
+                    SwitchListTile(
+                      title: const Text(
+                        'Is Society Common Expense',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: textColor),
+                      ),
+                      subtitle: const Text('Allocate across wings according to setup', style: TextStyle(fontSize: 12, color: subTextColor)),
+                      value: isCommonExpense,
+                      activeColor: primaryBlue,
+                      contentPadding: EdgeInsets.zero,
+                      onChanged: (val) => setSt(() => isCommonExpense = val),
+                    ),
+                    if (isCommonExpense) ...[
+                      const SizedBox(height: 12),
+                      _buildFieldLabel('Expense Distribution Mode'),
+                      DropdownButtonFormField<String>(
+                        value: distributionMode,
+                        decoration: _inputDecoration('Distribution Mode'),
+                        items: const [
+                          DropdownMenuItem(value: 'equal', child: Text('Equal Distribution')),
+                          DropdownMenuItem(value: 'percentage', child: Text('Percentage / Share-Based')),
+                        ],
+                        onChanged: (v) => setSt(() => distributionMode = v ?? 'equal'),
+                      ),
+                    ],
+                    const SizedBox(height: 18),
+                  ],
+                  // Replaced by top-level Transaction Account / Scope selector
                   _buildFieldLabel('Description'),
                   TextField(
                     controller: descCtrl,
@@ -609,6 +765,9 @@ class _TransactionsScreenState extends State<TransactionsScreen> with SingleTick
                           categoryName: selectedCategory?.name,
                           bankAccountId: selectedBank?.id,
                           toBankAccountId: selectedToBank?.id,
+                          wingId: selectedWing?.id,
+                          isCommonExpense: isCommonExpense,
+                          distributionMode: distributionMode,
                           year: selectedDate.year,
                           month: selectedDate.month,
                         );
