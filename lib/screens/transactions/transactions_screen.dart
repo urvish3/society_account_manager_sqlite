@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../models/models.dart';
 import '../../providers/app_provider.dart';
 import '../../services/database_service.dart';
+import '../../services/report_service.dart';
 
 final _fmt = NumberFormat('#,##0.00', 'en_IN');
 final _dateFmt = DateFormat('dd MMM yyyy');
@@ -56,20 +57,30 @@ class _TransactionsScreenState extends State<TransactionsScreen> with SingleTick
     final provider = context.read<AppProvider>();
     final allMms = await _db.getAllMaintenanceMonths(societyId: provider.society?.id);
     double wingMaintCollected = 0;
+    final processedMmIds = <int>{};
+
     for (final mm in allMms) {
       if (mm.year == _year && mm.month == _month) {
-        if (_selectedWingId == null || mm.wingId == _selectedWingId || mm.wingId == null) {
-          final fms = await _db.getFlatMaintenances(mm.id!);
-          for (final fm in fms) {
-            if (fm.status == PaymentStatus.paid) {
-              if (_selectedWingId != null) {
-                final flat = provider.allFlats.where((f) => f.id == fm.flatId).firstOrNull;
-                if (flat == null || flat.wingId == _selectedWingId) {
-                  wingMaintCollected += fm.totalAmount;
-                }
-              } else {
+        if (_selectedWingId != null) {
+          if (mm.wingId != _selectedWingId) continue;
+        } else {
+          if (mm.wingId == null && allMms.any((other) => other.year == _year && other.month == _month && other.wingId != null)) {
+            continue;
+          }
+        }
+        if (mm.id != null && processedMmIds.contains(mm.id)) continue;
+        if (mm.id != null) processedMmIds.add(mm.id!);
+
+        final fms = await _db.getFlatMaintenances(mm.id!);
+        for (final fm in fms) {
+          if (fm.status == PaymentStatus.paid) {
+            if (_selectedWingId != null) {
+              final flat = provider.allFlats.where((f) => f.id == fm.flatId).firstOrNull;
+              if (flat == null || flat.wingId == _selectedWingId) {
                 wingMaintCollected += fm.totalAmount;
               }
+            } else {
+              wingMaintCollected += fm.totalAmount;
             }
           }
         }
@@ -77,9 +88,14 @@ class _TransactionsScreenState extends State<TransactionsScreen> with SingleTick
     }
 
     final incomeTxns = _ofType(TransactionType.income);
+    final nonMaintIncomeTxns = incomeTxns
+        .where((t) => !t.description.toLowerCase().contains('maintenance') && (t.categoryName == null || !t.categoryName!.toLowerCase().contains('maintenance')))
+        .toList();
     final expenseTxns = _ofType(TransactionType.expense);
-    double totalIncomeTxn = incomeTxns.fold(0.0, (sum, t) => sum + t.amount);
+    double totalOtherIncomeTxn = nonMaintIncomeTxns.fold(0.0, (sum, t) => sum + t.amount);
     double totalExpense = expenseTxns.fold(0.0, (sum, t) => sum + t.amount);
+
+    double totalIncome = totalOtherIncomeTxn + wingMaintCollected;
 
     if (mounted) {
       setState(() {
@@ -88,7 +104,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> with SingleTick
           month: _month,
           openingCashBalance: _summary?.openingCashBalance ?? 0,
           openingBankBalance: _summary?.openingBankBalance ?? 0,
-          cashIncome: totalIncomeTxn + wingMaintCollected,
+          cashIncome: totalOtherIncomeTxn,
           bankIncome: 0,
           cashExpense: totalExpense,
           bankExpense: 0,
@@ -288,6 +304,8 @@ class _TransactionsScreenState extends State<TransactionsScreen> with SingleTick
       try {
         selectedBank = bankAccounts.firstWhere((b) => b.id == existing!.bankAccountId);
       } catch (_) {}
+    } else {
+      selectedBank = null;
     }
 
     BankAccount? selectedToBank;
@@ -305,16 +323,17 @@ class _TransactionsScreenState extends State<TransactionsScreen> with SingleTick
       try {
         selectedWing = wings.firstWhere((w) => w.id == existing!.wingId);
       } catch (_) {}
+    } else {
+      selectedWing = wings.where((w) => w.id == _selectedWingId).firstOrNull;
     }
 
     final amtCtrl = TextEditingController(text: existing?.amount.toString() ?? '');
     final descCtrl = TextEditingController(text: existing?.description ?? '');
-    DateTime selectedDate = existing?.date ?? DateTime(_year, _month, DateTime.now().day);
-    if (selectedDate.month != _month || selectedDate.year != _year) {
-      selectedDate = DateTime(_year, _month, 1);
-    }
+    DateTime selectedDate = existing?.date ?? DateTime(_year, _month, 1);
 
     double availableBalance = -1;
+    double scopeCashBalance = 0;
+    double scopeBankBalance = 0;
     String? errorMessage;
 
     await showModalBottomSheet(
@@ -334,6 +353,26 @@ class _TransactionsScreenState extends State<TransactionsScreen> with SingleTick
                 .toList();
 
             void updateBalance() async {
+              // 1. ALWAYS compute scopeCashBalance & scopeBankBalance first for ALL transaction types!
+              if (provider.society?.id != null) {
+                final summaries = await ReportService().computeWingBalances(provider.society!.id!, year: selectedDate.year, month: selectedDate.month);
+                final commonSummary = await ReportService().computeCommonSocietyBalance(provider.society!.id!, year: selectedDate.year, month: selectedDate.month);
+                setSt(() {
+                  if (selectedWing == null) {
+                    scopeCashBalance = commonSummary.cashBalance;
+                    scopeBankBalance = commonSummary.bankBalance;
+                  } else {
+                    final match = summaries.firstWhere(
+                      (s) => s.wing.id == selectedWing!.id,
+                      orElse: () => WingBalanceSummary(wing: selectedWing!, cashBalance: 0, bankBalance: 0, totalBalance: 0),
+                    );
+                    scopeCashBalance = match.cashBalance;
+                    scopeBankBalance = match.bankBalance;
+                  }
+                });
+              }
+
+              // 2. Evaluate source balance for validation
               int? sourceId;
               if (type == TransactionType.cashToBank) {
                 sourceId = null;
@@ -346,7 +385,12 @@ class _TransactionsScreenState extends State<TransactionsScreen> with SingleTick
                 return;
               }
 
-              double bal = await provider.getAccountBalance(sourceId, selectedDate.year, selectedDate.month);
+              double bal = 0;
+              if (sourceId == null) {
+                bal = scopeCashBalance;
+              } else {
+                bal = await provider.getAccountBalance(sourceId, selectedDate.year, selectedDate.month, wingId: selectedWing?.id);
+              }
 
               if (existing != null) {
                 if (existing!.type == TransactionType.income) {
@@ -468,32 +512,89 @@ class _TransactionsScreenState extends State<TransactionsScreen> with SingleTick
                               ),
                             ),
                           ],
-                          onChanged: (v) => setSt(() => selectedWing = v),
+                          onChanged: (v) {
+                            setSt(() => selectedWing = v);
+                            updateBalance();
+                          },
                         ),
                       ),
                     ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE8F5E9),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: const Color(0xFFC8E6C9)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Cash In Hand',
+                                  style: TextStyle(color: Color(0xFF2E7D32), fontSize: 11, fontWeight: FontWeight.bold),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '₹ ${_fmt.format(scopeCashBalance)}',
+                                  style: const TextStyle(color: Color(0xFF1B5E20), fontSize: 15, fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE3F2FD),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: const Color(0xFFBBDEFB)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Bank Balance',
+                                  style: TextStyle(color: Color(0xFF1565C0), fontSize: 11, fontWeight: FontWeight.bold),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '₹ ${_fmt.format(scopeBankBalance)}',
+                                  style: const TextStyle(color: Color(0xFF0D47A1), fontSize: 15, fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 20),
                   ],
-                  if (type != TransactionType.income)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                      margin: const EdgeInsets.only(bottom: 20),
-                      decoration: BoxDecoration(color: availableBalance <= 0.001 ? const Color(0xFFFEF2F2) : primaryBlue.withAlpha(13), borderRadius: BorderRadius.circular(14)),
-                      child: Row(
-                        children: [
-                          Icon(
-                            availableBalance <= 0.001 ? Icons.warning_amber_rounded : Icons.account_balance_wallet_outlined,
-                            size: 18,
-                            color: availableBalance <= 0.001 ? const Color(0xFFEF4444) : primaryBlue,
-                          ),
-                          const SizedBox(width: 10),
-                          Text(
-                            'Available ${(type == TransactionType.cashToBank || (type != TransactionType.bankToCash && type != TransactionType.bankToBank && selectedBank == null)) ? "Cash" : "Bank"} Balance: ₹ ${_fmt.format(availableBalance < 0 ? 0 : availableBalance)}',
-                            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: availableBalance <= 0.001 ? const Color(0xFFB91C1C) : primaryBlue),
-                          ),
-                        ],
-                      ),
-                    ),
+                  // if (type != TransactionType.income)
+                  //   Container(
+                  //     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  //     margin: const EdgeInsets.only(bottom: 20),
+                  //     decoration: BoxDecoration(color: availableBalance <= 0.001 ? const Color(0xFFFEF2F2) : primaryBlue.withAlpha(13), borderRadius: BorderRadius.circular(14)),
+                  //     child: Row(
+                  //       children: [
+                  //         Icon(
+                  //           availableBalance <= 0.001 ? Icons.warning_amber_rounded : Icons.account_balance_wallet_outlined,
+                  //           size: 18,
+                  //           color: availableBalance <= 0.001 ? const Color(0xFFEF4444) : primaryBlue,
+                  //         ),
+                  //         const SizedBox(width: 10),
+                  //         Text(
+                  //           'Available ${(type == TransactionType.cashToBank || (type != TransactionType.bankToCash && type != TransactionType.bankToBank && selectedBank == null)) ? "Cash" : "Bank"} Balance: ₹ ${_fmt.format(availableBalance < 0 ? 0 : availableBalance)}',
+                  //           style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: availableBalance <= 0.001 ? const Color(0xFFB91C1C) : primaryBlue),
+                  //         ),
+                  //       ],
+                  //     ),
+                  //   ),
                   if (errorMessage != null)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -727,7 +828,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> with SingleTick
                             sourceBankId = selectedBank!.id;
                             sourceName = "Source Bank";
                           }
-                          double bal = await provider.getAccountBalance(sourceBankId, selectedDate.year, selectedDate.month);
+                          double bal = await provider.getAccountBalance(sourceBankId, selectedDate.year, selectedDate.month, wingId: selectedWing?.id);
                           if (existing != null) {
                             if (existing!.type == TransactionType.income && existing!.bankAccountId == sourceBankId)
                               bal -= existing!.amount;

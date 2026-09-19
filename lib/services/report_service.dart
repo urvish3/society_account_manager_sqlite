@@ -91,8 +91,6 @@ class ReportService {
   // ── Wing Balances (Cash & Bank) ────────────
 
   Future<List<WingBalanceSummary>> computeWingBalances(int? societyId, {int? year, int? month}) async {
-    final societies = await _db.getSocieties();
-    final society = societies.firstWhere((s) => s.id == societyId, orElse: () => societies.first);
     final wings = await _db.getWings(societyId!);
     final allMms = await _db.getAllMaintenanceMonths(societyId: societyId);
     final allTxns = await _db.getAllTransactions(societyId: societyId);
@@ -108,8 +106,10 @@ class ReportService {
       double bankCollected = 0;
 
       for (final mm in allMms) {
-        if (mm.wingId != null && mm.wingId != wing.id) continue;
-        if (year != null && month != null && (mm.year != year || mm.month != month)) continue;
+        if (mm.wingId != null && mm.wingId != wing.id && mm.wingId != 0) continue;
+        if (year != null && month != null) {
+          if (mm.year > year || (mm.year == year && mm.month > month)) continue;
+        }
         final fms = await _db.getFlatMaintenances(mm.id!);
         for (final fm in fms) {
           if (flatIds.contains(fm.flatId) && fm.status == PaymentStatus.paid) {
@@ -124,8 +124,10 @@ class ReportService {
 
       final bool isPrimaryWing = wings.length == 1 || wing.name.toLowerCase().contains('g');
       final wingTxns = allTxns.where((t) {
-        if (t.wingId == wing.id || (isPrimaryWing && t.wingId == null)) {
-          if (year != null && month != null && (t.year != year || t.month != month)) return false;
+        if (year != null && month != null) {
+          if (t.year > year || (t.year == year && t.month > month)) return false;
+        }
+        if (t.wingId == wing.id || (isPrimaryWing && (t.wingId == null || t.wingId == 0))) {
           return true;
         }
         return false;
@@ -156,8 +158,8 @@ class ReportService {
         }
       }
 
-      double openingCash = isPrimaryWing ? society.openingCashBalance : 0.0;
-      double openingBank = allAccounts.where((b) => b.wingId == wing.id || (isPrimaryWing && b.wingId == null)).fold(0.0, (sum, b) => sum + b.openingBalance);
+      double openingCash = wing.openingCashBalance;
+      double openingBank = allAccounts.where((b) => b.wingId == wing.id || (isPrimaryWing && (b.wingId == null || b.wingId == 0))).fold(0.0, (sum, b) => sum + b.openingBalance);
 
       double cashBal = openingCash + cashCollected + cashIncome - cashExpense - cashToBank + bankToCash;
       double bankBal = openingBank + bankCollected + bankIncome - bankExpense + cashToBank - bankToCash;
@@ -173,6 +175,45 @@ class ReportService {
     }
 
     return summaries;
+  }
+
+  Future<WingBalanceSummary> computeCommonSocietyBalance(int societyId, {int? year, int? month}) async {
+    final allTxns = await _db.getAllTransactions(societyId: societyId);
+    final allAccounts = await _db.getBankAccounts(societyId: societyId);
+    final commonAccounts = allAccounts.where((b) => b.isCommon || b.wingId == null || b.wingId == 0).toList();
+
+    double openingCash = commonAccounts.where((b) => b.isCash).fold(0.0, (sum, b) => sum + b.openingBalance);
+    double openingBank = commonAccounts.where((b) => !b.isCash).fold(0.0, (sum, b) => sum + b.openingBalance);
+
+    final commonTxns = allTxns.where((t) {
+      if (year != null && month != null) {
+        if (t.year > year || (t.year == year && t.month > month)) return false;
+      }
+      return (t.isCommonExpense || t.wingId == null || t.wingId == 0);
+    }).toList();
+
+    double cashIncome = 0, bankIncome = 0, cashExpense = 0, bankExpense = 0, cashToBank = 0, bankToCash = 0;
+    for (final t in commonTxns) {
+      if (t.type == TransactionType.income) {
+        if (t.bankAccountId != null) bankIncome += t.amount; else cashIncome += t.amount;
+      } else if (t.type == TransactionType.expense) {
+        if (t.bankAccountId != null) bankExpense += t.amount; else cashExpense += t.amount;
+      } else if (t.type == TransactionType.cashToBank) {
+        cashToBank += t.amount;
+      } else if (t.type == TransactionType.bankToCash) {
+        bankToCash += t.amount;
+      }
+    }
+
+    double cashBal = openingCash + cashIncome - cashExpense - cashToBank + bankToCash;
+    double bankBal = openingBank + bankIncome - bankExpense + cashToBank - bankToCash;
+
+    return WingBalanceSummary(
+      wing: Wing(societyId: societyId, name: 'Society Common', floors: 0, defaultHousesPerFloor: 0),
+      cashBalance: double.parse(cashBal.toStringAsFixed(2)),
+      bankBalance: double.parse(bankBal.toStringAsFixed(2)),
+      totalBalance: double.parse((cashBal + bankBal).toStringAsFixed(2)),
+    );
   }
 
   // ── Excel Report ───────────────────────────

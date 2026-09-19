@@ -145,8 +145,8 @@ class AppProvider extends ChangeNotifier {
     }
   }
 
-  Future<double> getAccountBalance(int? bankAccountId, int year, int month) async {
-    return await _db.getAccountBalance(bankAccountId, year, month, societyId: society?.id);
+  Future<double> getAccountBalance(int? bankAccountId, int year, int month, {int? wingId}) async {
+    return await _db.getAccountBalance(bankAccountId, year, month, societyId: society?.id, wingId: wingId);
   }
 
   Future<double> computeBankBalance(int year, int month) async {

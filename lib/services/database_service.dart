@@ -62,7 +62,7 @@ class DatabaseService {
 
     return openDatabase(
       path,
-      version: 12,
+      version: 14,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
       onOpen: (db) async {
@@ -75,26 +75,50 @@ class DatabaseService {
         }
         // Bind all current financials (transactions, bank accounts, maintenance months) to Wing G for 'Lotus Campus - Rivanta Garden City'
         try {
-          final socs = await db.query('societies', where: 'name LIKE ?', whereArgs: ['%Lotus Campus - Rivanta Garden City%']);
-          if (socs.isNotEmpty) {
-            final socId = socs.first['id'];
-            final wings = await db.query('wings', where: 'societyId = ? AND (name LIKE ? OR name = ?)', whereArgs: [socId, '%Wing G%', 'G']);
-            if (wings.isNotEmpty) {
-              final wingGId = wings.first['id'];
-              await db.update('transactions', {'wingId': wingGId}, where: 'societyId = ? AND (wingId IS NULL OR wingId = 0)', whereArgs: [socId]);
-              await db.update('bank_accounts', {'wingId': wingGId}, where: 'societyId = ? AND (isCommon = 0 OR isCommon IS NULL)', whereArgs: [socId]);
-              await db.update('bank_accounts', {'wingId': null}, where: 'isCommon = 1');
-              await db.update('maintenance_months', {'wingId': wingGId}, where: 'societyId = ? AND (wingId IS NULL OR wingId = 0)', whereArgs: [socId]);
+          final mms = await db.query('maintenance_months');
+          for (final m in mms) {
+            if (m['wingId'] == null) {
+              final hasWingSpecific = mms.any((other) => other['societyId'] == m['societyId'] && other['year'] == m['year'] && other['month'] == m['month'] && other['wingId'] != null);
+              if (hasWingSpecific && m['id'] != null) {
+                await db.delete('flat_maintenances', where: 'maintenanceMonthId = ?', whereArgs: [m['id']]);
+                await db.delete('maintenance_months', where: 'id = ?', whereArgs: [m['id']]);
+              }
             }
           }
         } catch (e, st) {
-          debugPrint('OnOpen binding error: $e\n$st');
+          debugPrint('Maintenance cleanup error: $e\n$st');
+        }
+
+        try {
+          final socs = await db.query('societies', where: 'name LIKE ?', whereArgs: ['%Lotus Campus - Rivanta Garden City%']);
+          if (socs.isNotEmpty) {
+            final socId = socs.first['id'];
+            final wings = await db.query('wings', where: 'societyId = ?', whereArgs: [socId]);
+            for (final w in wings) {
+              final name = (w['name'] as String? ?? '').toLowerCase();
+              if (name.contains('g') || name == 'g') {
+                await db.update('wings', {'openingCashBalance': 65429.0}, where: 'id = ?', whereArgs: [w['id']]);
+                await db.update('bank_accounts', {'openingBalance': 65429.0}, where: 'wingId = ? AND isCash = 1', whereArgs: [w['id']]);
+              } else {
+                await db.update('wings', {'openingCashBalance': 0.0}, where: 'id = ?', whereArgs: [w['id']]);
+                await db.update('bank_accounts', {'openingBalance': 0.0}, where: 'wingId = ? AND isCash = 1', whereArgs: [w['id']]);
+              }
+            }
+            await db.update('societies', {'openingCashBalance': 0.0}, where: 'id = ?', whereArgs: [socId]);
+          }
+        } catch (e, st) {
+          debugPrint('OnOpen opening cash enforce error: $e\n$st');
         }
       },
     );
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 14) {
+      await db.execute('ALTER TABLE societies ADD COLUMN currentBalance REAL DEFAULT 0');
+      await db.execute('ALTER TABLE wings ADD COLUMN currentBalance REAL DEFAULT 0');
+      await db.execute('ALTER TABLE bank_accounts ADD COLUMN currentBalance REAL DEFAULT 0');
+    }
     if (oldVersion < 2) {
       // Add openingCashBalance to societies if missing
       await db.execute('ALTER TABLE societies ADD COLUMN openingCashBalance REAL DEFAULT 0');
@@ -149,6 +173,28 @@ class DatabaseService {
         }
       } catch (e, st) {
         debugPrint('Upgrade migration error: $e\n$st');
+      }
+    }
+    if (oldVersion < 13) {
+      try {
+        final socs = await db.query('societies', limit: 1);
+        if (socs.isNotEmpty) {
+          final socId = socs.first['id'];
+          final wings = await db.query('wings', where: 'societyId = ?', whereArgs: [socId]);
+          for (final w in wings) {
+            final name = (w['name'] as String? ?? '').toLowerCase();
+            if (name.contains('g') || name == 'g') {
+              await db.update('wings', {'openingCashBalance': 65429.0}, where: 'id = ?', whereArgs: [w['id']]);
+              await db.update('bank_accounts', {'openingBalance': 65429.0}, where: 'wingId = ? AND isCash = 1', whereArgs: [w['id']]);
+            } else {
+              await db.update('wings', {'openingCashBalance': 0.0}, where: 'id = ?', whereArgs: [w['id']]);
+              await db.update('bank_accounts', {'openingBalance': 0.0}, where: 'wingId = ? AND isCash = 1', whereArgs: [w['id']]);
+            }
+          }
+          await db.update('societies', {'openingCashBalance': 0.0}, where: 'id = ?', whereArgs: [socId]);
+        }
+      } catch (e, st) {
+        debugPrint('Migration 13 opening cash error: $e\n$st');
       }
     }
     if (oldVersion < 11) {
@@ -213,6 +259,7 @@ class DatabaseService {
         address TEXT,
         defaultMaintenance REAL DEFAULT 1000,
         openingCashBalance REAL DEFAULT 0,
+        currentBalance REAL DEFAULT 0,
         autoReflectCommonExpenses INTEGER DEFAULT 1,
         expenseDistributionMode TEXT DEFAULT 'equal'
       )
@@ -229,6 +276,7 @@ class DatabaseService {
         allocationPercentage REAL DEFAULT 100.0,
         defaultMaintenance REAL DEFAULT 1000.0,
         openingCashBalance REAL DEFAULT 0.0,
+        currentBalance REAL DEFAULT 0.0,
         FOREIGN KEY (societyId) REFERENCES societies(id)
       )
     ''');
@@ -322,6 +370,7 @@ class DatabaseService {
         isActive INTEGER DEFAULT 1,
         isCommon INTEGER DEFAULT 0,
         isCash INTEGER DEFAULT 0,
+        currentBalance REAL DEFAULT 0,
         FOREIGN KEY (societyId) REFERENCES societies(id),
         FOREIGN KEY (wingId) REFERENCES wings(id)
       )
@@ -544,6 +593,7 @@ class DatabaseService {
   Future<void> updateFlatMaintenance(FlatMaintenance fm) async {
     final d = await db;
     await d.update('flat_maintenances', fm.toMap(), where: 'id = ?', whereArgs: [fm.id]);
+    await recalculateBalances();
   }
 
   // ── Transactions ───────────────────────────
@@ -551,6 +601,7 @@ class DatabaseService {
   Future<int> insertTransaction(Transaction t) async {
     final d = await db;
     t.id = await d.insert('transactions', t.toMap());
+    await recalculateBalances();
     return t.id!;
   }
 
@@ -574,11 +625,58 @@ class DatabaseService {
   Future<void> updateTransaction(Transaction t) async {
     final d = await db;
     await d.update('transactions', t.toMap(), where: 'id = ?', whereArgs: [t.id]);
+    await recalculateBalances();
   }
 
   Future<void> deleteTransaction(int id) async {
     final d = await db;
     await d.delete('transactions', where: 'id = ?', whereArgs: [id]);
+    await recalculateBalances();
+  }
+
+  Future<void> recalculateBalances() async {
+    final d = await db;
+    try {
+      final accounts = await getBankAccounts();
+      for (final acc in accounts) {
+        double bal = acc.openingBalance;
+        final txns = await d.query('transactions', where: 'bankAccountId = ? OR toBankAccountId = ?', whereArgs: [acc.id, acc.id]);
+        for (var m in txns) {
+          final t = Transaction.fromMap(m);
+          if (t.type == TransactionType.income || t.type == TransactionType.cashToBank) {
+            if (t.bankAccountId == acc.id) bal += t.amount;
+          } else if (t.type == TransactionType.expense || t.type == TransactionType.bankToCash) {
+            if (t.bankAccountId == acc.id) bal -= t.amount;
+          } else if (t.type == TransactionType.bankToBank) {
+            if (t.bankAccountId == acc.id) bal -= t.amount;
+            if (t.toBankAccountId == acc.id) bal += t.amount;
+          }
+        }
+        final mms = await getAllMaintenanceMonths();
+        for (final mm in mms) {
+          final fms = await getFlatMaintenances(mm.id!);
+          for (final fm in fms) {
+            if (fm.status == PaymentStatus.paid && fm.bankAccountId == acc.id) {
+              bal += fm.totalAmount;
+            }
+          }
+        }
+        await d.update('bank_accounts', {'currentBalance': double.parse(bal.toStringAsFixed(2))}, where: 'id = ?', whereArgs: [acc.id]);
+      }
+
+      final wings = await d.query('wings');
+      for (final w in wings) {
+        final wingId = w['id'];
+        final wingAccounts = await d.query('bank_accounts', where: 'wingId = ?', whereArgs: [wingId]);
+        double wingTotal = 0;
+        for (final accMap in wingAccounts) {
+          wingTotal += (accMap['currentBalance'] as num?)?.toDouble() ?? 0;
+        }
+        await d.update('wings', {'currentBalance': double.parse(wingTotal.toStringAsFixed(2))}, where: 'id = ?', whereArgs: [wingId]);
+      }
+    } catch (e, st) {
+      debugPrint('Recalculate balances error: $e\n$st');
+    }
   }
 
   // ── Transaction Categories ─────────────────
@@ -616,29 +714,77 @@ class DatabaseService {
 
   // ── Monthly Summary Computation ────────────
 
-  Future<double> getAccountBalance(int? bankAccountId, int year, int month, {int? societyId}) async {
+  Future<double> getAccountBalance(int? bankAccountId, int year, int month, {int? societyId, int? wingId}) async {
     final d = await db;
     if (bankAccountId == null) {
-      final summary = await computeMonthlySummary(year, month, societyId: societyId);
-      return double.parse(summary.closingCashBalance.toStringAsFixed(2));
+      final wings = societyId != null ? await getWings(societyId) : <Wing>[];
+      final targetWing = wingId != null ? wings.where((w) => w.id == wingId).firstOrNull : null;
+
+      if (targetWing == null) {
+        return 0.0;
+      }
+
+      double cashBal = targetWing.openingCashBalance;
+
+      final allMms = await getAllMaintenanceMonths(societyId: societyId);
+      for (final m in allMms) {
+        if (m.year < year || (m.year == year && m.month <= month)) {
+          if (m.wingId != null && m.wingId != targetWing.id) continue;
+          final fms = await getFlatMaintenances(m.id!);
+          for (final fm in fms) {
+            if (fm.status == PaymentStatus.paid && fm.bankAccountId == null) {
+              if (m.wingId == null) {
+                final flat = await d.query('flats', where: 'id = ?', whereArgs: [fm.flatId]);
+                if (flat.isNotEmpty && flat.first['wingId'] == targetWing.id) {
+                  cashBal += fm.totalAmount;
+                }
+              } else if (m.wingId == targetWing.id) {
+                cashBal += fm.totalAmount;
+              }
+            }
+          }
+        }
+      }
+
+      final List<Map<String, dynamic>> txns = societyId != null
+          ? await d.query('transactions', where: 'societyId = ? AND bankAccountId IS NULL', whereArgs: [societyId])
+          : await d.query('transactions', where: 'bankAccountId IS NULL');
+
+      for (final m in txns) {
+        final t = Transaction.fromMap(m);
+        if (t.year < year || (t.year == year && t.month <= month)) {
+          if (t.wingId != null && t.wingId != targetWing.id) continue;
+          if (t.type == TransactionType.income || t.type == TransactionType.bankToCash) {
+            cashBal += t.amount;
+          } else if (t.type == TransactionType.expense || t.type == TransactionType.cashToBank) {
+            cashBal -= t.amount;
+          }
+        }
+      }
+
+      return double.parse(cashBal.toStringAsFixed(2));
     }
 
     final accs = await getBankAccounts(societyId: societyId);
-    final acc = accs.firstWhere((a) => a.id == bankAccountId);
+    final acc = accs.firstWhere(
+      (a) => a.id == bankAccountId,
+      orElse: () => BankAccount(bankName: '', accountNumber: '', accountHolder: '', openingBalance: 0, openingDate: DateTime.now()),
+    );
     double balance = acc.openingBalance;
 
     // From transactions
     final List<Map<String, dynamic>> maps = societyId != null
-        ? await d.query('transactions', where: 'societyId = ? AND bankAccountId = ?', whereArgs: [societyId, bankAccountId])
-        : await d.query('transactions', where: 'bankAccountId = ?', whereArgs: [bankAccountId]);
+        ? await d.query('transactions', where: 'societyId = ? AND (bankAccountId = ? OR toBankAccountId = ?)', whereArgs: [societyId, bankAccountId, bankAccountId])
+        : await d.query('transactions', where: 'bankAccountId = ? OR toBankAccountId = ?', whereArgs: [bankAccountId, bankAccountId]);
 
     for (final m in maps) {
       final t = Transaction.fromMap(m);
       if (t.year < year || (t.year == year && t.month <= month)) {
+        if (wingId != null && t.wingId != null && t.wingId != wingId) continue;
         if (t.type == TransactionType.income || t.type == TransactionType.cashToBank) {
-          balance += t.amount;
+          if (t.bankAccountId == bankAccountId) balance += t.amount;
         } else if (t.type == TransactionType.expense || t.type == TransactionType.bankToCash) {
-          balance -= t.amount;
+          if (t.bankAccountId == bankAccountId) balance -= t.amount;
         } else if (t.type == TransactionType.bankToBank) {
           if (t.bankAccountId == bankAccountId) {
             balance -= t.amount; // Source
@@ -666,17 +812,35 @@ class DatabaseService {
   }
 
   Future<MonthlySummary> computeMonthlySummary(int year, int month, {int? societyId}) async {
-    // Bank & Cash Opening Balance (wingId IS NULL)
-    final accounts = await getBankAccounts(societyId: societyId);
-    double openingCash = accounts.where((b) => b.wingId == null && b.isCash).fold(0, (sum, acc) => sum + acc.openingBalance);
-    double openingBank = accounts.where((b) => b.wingId == null && !b.isCash).fold(0, (sum, acc) => sum + acc.openingBalance);
+    final wings = societyId != null ? await getWings(societyId) : <Wing>[];
+    if (wings.isNotEmpty) {
+      return MonthlySummary(
+        year: year,
+        month: month,
+        openingCashBalance: 0,
+        openingBankBalance: 0,
+        cashMaintenanceCollected: 0,
+        bankMaintenanceCollected: 0,
+        cashIncome: 0,
+        bankIncome: 0,
+        cashExpense: 0,
+        bankExpense: 0,
+        cashToBank: 0,
+        bankToCash: 0,
+      );
+    }
 
-    // Maintenance collected (paid flat maintenances) for society level (wingId IS NULL)
+    // Bank & Cash Opening Balance
+    final accounts = await getBankAccounts(societyId: societyId);
+    double openingCash = accounts.where((b) => b.isCash).fold(0, (sum, acc) => sum + acc.openingBalance);
+    double openingBank = accounts.where((b) => !b.isCash).fold(0, (sum, acc) => sum + acc.openingBalance);
+
+    // Maintenance collected (paid flat maintenances)
     final allMms = await getAllMaintenanceMonths(societyId: societyId);
     double cashMaintenanceCollected = 0;
     double bankMaintenanceCollected = 0;
     for (final mm in allMms) {
-      if (mm.year == year && mm.month == month && mm.wingId == null) {
+      if (mm.year == year && mm.month == month) {
         final fms = await getFlatMaintenances(mm.id!);
         for (final fm in fms) {
           if (fm.status == PaymentStatus.paid) {
@@ -690,8 +854,8 @@ class DatabaseService {
       }
     }
 
-    // Transactions (wingId IS NULL)
-    final txns = (await getTransactions(year, month, societyId: societyId)).where((t) => t.wingId == null).toList();
+    // Transactions
+    final txns = await getTransactions(year, month, societyId: societyId);
     double cashIncome = 0;
     double bankIncome = 0;
     double cashExpense = 0;
@@ -721,8 +885,8 @@ class DatabaseService {
 
     // openingBank already computed from accounts where wingId == null
 
-    // Compute balances from previous months (wingId IS NULL)
-    final allPrevTxns = (await getAllTransactions(societyId: societyId)).where((t) => t.wingId == null);
+    // Compute balances from previous months
+    final allPrevTxns = await getAllTransactions(societyId: societyId);
     final prevMonthsTxns = allPrevTxns.where((t) => t.year < year || (t.year == year && t.month < month));
 
     double cashIn = 0;
@@ -752,9 +916,9 @@ class DatabaseService {
       }
     }
 
-    // Previous maintenance collections (wingId IS NULL)
+    // Previous maintenance collections
     for (final m in allMms) {
-      if ((m.year < year || (m.year == year && m.month < month)) && m.wingId == null) {
+      if (m.year < year || (m.year == year && m.month < month)) {
         final fms = await getFlatMaintenances(m.id!);
         for (final fm in fms) {
           if (fm.status == PaymentStatus.paid) {
